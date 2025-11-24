@@ -122,19 +122,14 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'caisse.php' ? 'active' : ''; ?>" href="caisse.php">
-                                <i class="bi bi-cash-stack"></i> Caisse
+                                <i class="bi bi-building"></i> Caisse
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'classe.php' ? 'active' : ''; ?>" href="classe.php">
                                 <i class="bi bi-cash-stack"></i> Classe
                             </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'rapports.php' ? 'active' : ''; ?>" href="rapports.php">
-                                <i class="bi bi-graph-up"></i> Rapports
-                            </a>
-                        </li>
+                        </li> 
                         <?php if (($_SESSION['role'] ?? '') == 'admin'): ?>
                         <li class="nav-item">
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'utilisateur.php' ? 'active' : ''; ?>" href="utilisateur.php">

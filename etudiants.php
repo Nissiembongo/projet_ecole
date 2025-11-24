@@ -15,8 +15,7 @@ $stmt_classes = $db->prepare($query_classes);
 $stmt_classes->execute();
 $classes = $stmt_classes->fetchAll(PDO::FETCH_ASSOC);
 
-// Récupérer le filtre classe
-$filtre_classe = $_GET['classe'] ?? '';
+$success = $error = '';
 
 // Ajouter un étudiant
 if ($_POST && isset($_POST['ajouter_etudiant'])) {
@@ -28,23 +27,107 @@ if ($_POST && isset($_POST['ajouter_etudiant'])) {
         $telephone = $_POST['telephone'];
         $email = $_POST['email'];
         
-        $query = "INSERT INTO etudiants (matricule, nom, prenom, classe_id, telephone, email, date_inscription) 
-                  VALUES (:matricule, :nom, :prenom, :classe_id, :telephone, :email, CURDATE())";
-        $stmt = $db->prepare($query);
-        $stmt->bindParam(':matricule', $matricule);
-        $stmt->bindParam(':nom', $nom);
-        $stmt->bindParam(':prenom', $prenom);
-        $stmt->bindParam(':classe_id', $classe_id);
-        $stmt->bindParam(':telephone', $telephone);
-        $stmt->bindParam(':email', $email);
+        // Vérifier si le matricule existe déjà
+        $query_check_matricule = "SELECT id FROM etudiants WHERE matricule = :matricule";
+        $stmt_check_matricule = $db->prepare($query_check_matricule);
+        $stmt_check_matricule->bindParam(':matricule', $matricule);
+        $stmt_check_matricule->execute();
         
-        if ($stmt->execute()) {
-            $success = "Étudiant ajouté avec succès!";
+        if ($stmt_check_matricule->rowCount() > 0) {
+            $error = "Un étudiant avec ce matricule existe déjà!";
+        } else {
+            $query = "INSERT INTO etudiants (matricule, nom, prenom, classe_id, telephone, email, date_inscription) 
+                      VALUES (:matricule, :nom, :prenom, :classe_id, :telephone, :email, CURDATE())";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':matricule', $matricule);
+            $stmt->bindParam(':nom', $nom);
+            $stmt->bindParam(':prenom', $prenom);
+            $stmt->bindParam(':classe_id', $classe_id);
+            $stmt->bindParam(':telephone', $telephone);
+            $stmt->bindParam(':email', $email);
+            
+            if ($stmt->execute()) {
+                $success = "Étudiant ajouté avec succès!";
+                $_POST = array(); // Vider le formulaire
+            }
         }
     } catch (PDOException $e) {
         $error = "Erreur: " . $e->getMessage();
     }
 }
+
+// Modifier un étudiant
+if ($_POST && isset($_POST['modifier_etudiant'])) {
+    try {
+        $etudiant_id = $_POST['etudiant_id'];
+        $matricule = $_POST['matricule'];
+        $nom = $_POST['nom'];
+        $prenom = $_POST['prenom'];
+        $classe_id = $_POST['classe_id'];
+        $telephone = $_POST['telephone'];
+        $email = $_POST['email'];
+        
+        // Vérifier si le matricule existe déjà pour un autre étudiant
+        $query_check_matricule = "SELECT id FROM etudiants WHERE matricule = :matricule AND id != :id";
+        $stmt_check_matricule = $db->prepare($query_check_matricule);
+        $stmt_check_matricule->bindParam(':matricule', $matricule);
+        $stmt_check_matricule->bindParam(':id', $etudiant_id);
+        $stmt_check_matricule->execute();
+        
+        if ($stmt_check_matricule->rowCount() > 0) {
+            $error = "Un autre étudiant avec ce matricule existe déjà!";
+        } else {
+            $query = "UPDATE etudiants SET matricule = :matricule, nom = :nom, prenom = :prenom, 
+                     classe_id = :classe_id, telephone = :telephone, email = :email 
+                     WHERE id = :id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':matricule', $matricule);
+            $stmt->bindParam(':nom', $nom);
+            $stmt->bindParam(':prenom', $prenom);
+            $stmt->bindParam(':classe_id', $classe_id);
+            $stmt->bindParam(':telephone', $telephone);
+            $stmt->bindParam(':email', $email);
+            $stmt->bindParam(':id', $etudiant_id);
+            
+            if ($stmt->execute()) {
+                $success = "Étudiant modifié avec succès!";
+            }
+        }
+    } catch (PDOException $e) {
+        $error = "Erreur: " . $e->getMessage();
+    }
+}
+
+// Supprimer un étudiant
+if (isset($_GET['supprimer_etudiant'])) {
+    try {
+        $etudiant_id = $_GET['supprimer_etudiant'];
+        
+        // Vérifier s'il y a des paiements associés à cet étudiant
+        $query_check_paiements = "SELECT COUNT(*) as total FROM paiements WHERE etudiant_id = :etudiant_id";
+        $stmt_check_paiements = $db->prepare($query_check_paiements);
+        $stmt_check_paiements->bindParam(':etudiant_id', $etudiant_id);
+        $stmt_check_paiements->execute();
+        $has_paiements = $stmt_check_paiements->fetch(PDO::FETCH_ASSOC)['total'] > 0;
+        
+        if ($has_paiements) {
+            $error = "Impossible de supprimer cet étudiant car il a des paiements enregistrés. Vous devez d'abord supprimer ses paiements.";
+        } else {
+            $query = "DELETE FROM etudiants WHERE id = :id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':id', $etudiant_id);
+            
+            if ($stmt->execute()) {
+                $success = "Étudiant supprimé avec succès!";
+            }
+        }
+    } catch (PDOException $e) {
+        $error = "Erreur: " . $e->getMessage();
+    }
+}
+
+// Récupérer le filtre classe
+$filtre_classe = $_GET['classe'] ?? '';
 
 // Construire la requête avec filtre
 $where_condition = '';
@@ -79,6 +162,17 @@ if (!empty($filtre_classe) && $filtre_classe !== 'all') {
     $classe_filtree = $stmt_classe_filtree->fetch(PDO::FETCH_ASSOC);
     $classe_filtree_nom = $classe_filtree['nom'] ?? '';
 }
+
+// Récupérer un étudiant spécifique pour modification
+$etudiant_a_modifier = null;
+if (isset($_GET['modifier_etudiant'])) {
+    $etudiant_id = $_GET['modifier_etudiant'];
+    $query_etudiant = "SELECT * FROM etudiants WHERE id = :id";
+    $stmt_etudiant = $db->prepare($query_etudiant);
+    $stmt_etudiant->bindParam(':id', $etudiant_id);
+    $stmt_etudiant->execute();
+    $etudiant_a_modifier = $stmt_etudiant->fetch(PDO::FETCH_ASSOC);
+}
 ?>
 
 <?php 
@@ -101,14 +195,14 @@ include 'layout.php';
     </button>
 </div>
 
-<?php if (isset($success)): ?>
+<?php if (!empty($success)): ?>
     <div class="alert alert-success alert-dismissible fade show" role="alert">
         <i class="bi bi-check-circle"></i> <?php echo $success; ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php endif; ?>
 
-<?php if (isset($error)): ?>
+<?php if (!empty($error)): ?>
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
         <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -266,12 +360,20 @@ include 'layout.php';
                                    class="btn btn-success" data-bs-toggle="tooltip" title="Enregistrer paiement">
                                     <i class="bi bi-credit-card"></i>
                                 </a>
-                                <button class="btn btn-info" data-bs-toggle="tooltip" title="Modifier">
+                                <button class="btn btn-info" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#modifierEtudiantModal"
+                                        onclick="chargerDonneesEtudiant(<?php echo htmlspecialchars(json_encode($etudiant)); ?>)"
+                                        data-bs-toggle="tooltip" title="Modifier">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-outline-danger" data-bs-toggle="tooltip" title="Supprimer">
+                                <a href="?supprimer_etudiant=<?php echo $etudiant['id']; ?>" 
+                                   class="btn btn-outline-danger" 
+                                   data-bs-toggle="tooltip" 
+                                   title="Supprimer"
+                                   onclick="return confirm('Êtes-vous sûr de vouloir supprimer l\\'élève <?php echo htmlspecialchars(addslashes($etudiant['nom'] . ' ' . $etudiant['prenom'])); ?> ? Cette action est irréversible.')">
                                     <i class="bi bi-trash"></i>
-                                </button>
+                                </a>
                             </div>
                         </td>
                     </tr>
@@ -371,6 +473,62 @@ include 'layout.php';
     </div>
 </div>
 
+<!-- Modal Modifier Étudiant -->
+<div class="modal fade" id="modifierEtudiantModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Modifier l'Élève</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <input type="hidden" id="modifier_etudiant_id" name="etudiant_id">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="modifier_matricule" class="form-label">Matricule *</label>
+                            <input type="text" class="form-control" id="modifier_matricule" name="matricule" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_classe_id" class="form-label">Classe *</label>
+                            <select class="form-control" id="modifier_classe_id" name="classe_id" required>
+                                <option value="">Sélectionner une classe</option>
+                                <?php foreach ($classes as $classe): ?>
+                                <option value="<?php echo $classe['id']; ?>">
+                                    <?php echo $classe['nom'] . ' - ' . $classe['niveau']; ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_nom" class="form-label">Nom *</label>
+                            <input type="text" class="form-control" id="modifier_nom" name="nom" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_prenom" class="form-label">Prénom *</label>
+                            <input type="text" class="form-control" id="modifier_prenom" name="prenom" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_telephone" class="form-label">Téléphone</label>
+                            <input type="text" class="form-control" id="modifier_telephone" name="telephone">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="modifier_email" name="email">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" name="modifier_etudiant" class="btn btn-warning">
+                        <i class="bi bi-save"></i> Modifier
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <?php include 'layout-end.php'; ?>
 
 <script>
@@ -392,4 +550,15 @@ document.addEventListener('DOMContentLoaded', function() {
         matriculeInput.value = `MAT${year}${random}`;
     }
 });
+
+// Fonction pour charger les données dans le modal de modification
+function chargerDonneesEtudiant(etudiant) {
+    document.getElementById('modifier_etudiant_id').value = etudiant.id;
+    document.getElementById('modifier_matricule').value = etudiant.matricule;
+    document.getElementById('modifier_nom').value = etudiant.nom;
+    document.getElementById('modifier_prenom').value = etudiant.prenom;
+    document.getElementById('modifier_classe_id').value = etudiant.classe_id;
+    document.getElementById('modifier_telephone').value = etudiant.telephone || '';
+    document.getElementById('modifier_email').value = etudiant.email || '';
+}
 </script>
