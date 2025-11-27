@@ -2,7 +2,7 @@
 include 'config.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
+    header("Location: index.php");
     exit();
 }
 
@@ -255,7 +255,7 @@ $filtre_etudiant = $_GET['etudiant'] ?? '';
 $filtre_classe = $_GET['classe'] ?? '';
 $filtre_statut = $_GET['statut'] ?? '';
 $filtre_mois = $_GET['mois'] ?? '';
-$filtre_annee = $_GET['annee'] ?? date('Y');
+$filtre_annee = $_GET['annee'] ?? '';
 
 if (!empty($filtre_etudiant)) {
     $where_conditions[] = "p.etudiant_id = :etudiant_id";
@@ -484,19 +484,19 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                         <option value="<?php echo $i; ?>" <?php echo ($filtre_mois == $i) ? 'selected' : ''; ?>>
                                             <?php echo DateTime::createFromFormat('!m', $i)->format('F'); ?>
                                         </option>
-                                        <?php endfor; ?>
-                                    </select>
-                                </div>
-                                <div class="col-md-2">
-                                    <label for="filtre_annee" class="form-label">Année</label>
-                                    <select class="form-control" id="filtre_annee" name="annee">
-                                        <option value="">Toutes les années</option>
-                                        <?php for ($i = date('Y') - 5; $i <= date('Y') + 1; $i++): ?>
-                                            <option value="<?php echo $i; ?>" <?php echo ($filtre_annee == $i)? 'selected' : '';  ?>>
-                                                <?php echo $i; ?>
-                                            </option>
-                                        <?php endfor; ?>
-                                    </select>
+                                    <?php endfor; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label for="filtre_annee" class="form-label">Année</label>
+                                <select class="form-control" id="filtre_annee" name="annee">
+                                    <option value="">Toutes les années</option>
+                                    <?php for ($i = date('Y') - 5; $i <= date('Y') + 1; $i++): ?>
+                                        <option value="<?php echo $i; ?>" <?php echo ($filtre_annee == $i) ? 'selected' : ''; ?>>
+                                            <?php echo $i; ?>
+                                        </option>
+                                    <?php endfor; ?>
+                                </select>
                             </div>
                             <div class="col-md-2 d-flex align-items-end">
                                 <button type="submit" class="btn btn-outline-primary w-100">
@@ -507,7 +507,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                     </div>
                 </div>
                 <!-- Résumé des filtres actifs -->
-                <?php if (!empty($filtre_classe) || !empty($filtre_statut) || !empty($filtre_mois) || !empty($filtre_annee)): ?>
+                <?php if (!empty($filtre_classe) || !empty($filtre_statut) || !empty($filtre_mois)|| !empty($filtre_annee) ): ?>
                     <div class="alert alert-info mb-4">
                         <h6><i class="bi bi-info-circle"></i> Filtres actifs :</h6>
                         <div class="d-flex flex-wrap gap-2 mt-2">

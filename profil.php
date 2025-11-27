@@ -2,7 +2,7 @@
 include 'config.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
+    header("Location: index.php");
     exit();
 }
 
@@ -97,7 +97,7 @@ include 'layout.php';
                         </div>
 
                         <div class="d-flex">
-                            <div class="col-6"><h5 class="mb-0">Rôl  </h5></div>
+                            <div class="col-6"><h5 class="mb-0">Rôle </h5></div>
                             <div class="col-6"><h6 class="mb-0"><?php echo ": ".htmlspecialchars($prof['role']); ?></h6></div>
                             
                         </div>
@@ -106,7 +106,6 @@ include 'layout.php';
                 </div>
             </div>
         </div>
-
         <?php endforeach; ?>
     </div>
 </div>
