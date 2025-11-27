@@ -130,6 +130,11 @@
                                 <i class="bi bi-cash-stack"></i> Classe
                             </a>
                         </li> 
+                        <li class="nav-item">
+                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'rapport.php' ? 'active' : ''; ?>" href="rapport.php">
+                                <i class="bi bi-file-text"></i> Rapport
+                            </a>
+                        </li> 
                         <?php if (($_SESSION['role'] ?? '') == 'admin'): ?>
                         <li class="nav-item">
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'utilisateur.php' ? 'active' : ''; ?>" href="utilisateur.php">
