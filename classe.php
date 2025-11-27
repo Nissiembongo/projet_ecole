@@ -143,8 +143,8 @@ if (isset($_GET['modifier_classe'])) {
 }
 
 // Options pour les selects
-$niveaux = ['8ème','7ème', '6ème', '5ème', '4ème', '3ème', '2nde', '1ère', 'Terminale'];
-$filieres = ['Générale', 'Scientifique', 'Littéraire', 'Technologique', 'Professionnelle'];
+$niveaux = ['8ème','7ème', '6ème', '5ème', '4ème', '3ème', '2nde', '1ère'];
+$filieres = ['Commerciale et gestion', 'Scientifique', 'Littéraire', 'Pédagogie générale'];
 $annees_scolaires = [
     (date('Y')-1) . '-' . date('Y'),
     date('Y') . '-' . (date('Y')+1),
@@ -160,7 +160,7 @@ include 'layout.php';
 <!-- Breadcrumb -->
 <nav aria-label="breadcrumb" class="mb-4">
     <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="index.php"><i class="bi bi-house"></i></a></li>
+        <li class="breadcrumb-item"><a href="dashboard.php"><i class="bi bi-house"></i></a></li>
         <li class="breadcrumb-item active" aria-current="page">Classes</li>
     </ol>
 </nav>
@@ -297,7 +297,7 @@ include 'layout.php';
                         </td>
                         <td>
                             <span class="badge bg-success">
-                                <?php echo number_format($classe['total_paiements'], 0, ',', ' '); ?> AOA
+                                <?php echo number_format($classe['total_paiements'], 0, ',', ' '); ?> Kwz
                             </span>
                         </td>
                         <td>
@@ -371,7 +371,7 @@ include 'layout.php';
                         <div class="col-md-6">
                             <label for="filiere" class="form-label">Filière</label>
                             <select class="form-control" id="filiere" name="filiere">
-                                <option value="Générale">Générale</option>
+                                <option value="">Sélectionner une Filière</option>
                                 <?php foreach ($filieres as $filiere): ?>
                                 <option value="<?php echo $filiere; ?>"><?php echo $filiere; ?></option>
                                 <?php endforeach; ?>

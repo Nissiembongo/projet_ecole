@@ -126,7 +126,7 @@ include 'layout.php';
 <!-- Breadcrumb -->
 <nav aria-label="breadcrumb" class="mb-4">
     <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="index.php"><i class="bi bi-house"></i></a></li>
+        <li class="breadcrumb-item"><a href="dashboard.php"><i class="bi bi-house"></i></a></li>
         <li class="breadcrumb-item active" aria-current="page">Types de Frais</li>
     </ol>
 </nav>
@@ -169,7 +169,7 @@ include 'layout.php';
                             $stmt_montant_total = $db->prepare($query_montant_total);
                             $stmt_montant_total->execute();
                             $montant_total = $stmt_montant_total->fetch(PDO::FETCH_ASSOC)['total'];
-                            echo number_format($montant_total, 0, ',', ' ') . ' AOA';
+                            echo number_format($montant_total, 0, ',', ' ') . ' Kwz';
                             ?>
                         </h4>
                         <small class="text-muted">Montant Total Configuré</small>
@@ -229,7 +229,7 @@ include 'layout.php';
                         </td>
                         <td>
                             <span class="badge bg-success fs-6">
-                                <?php echo number_format($fra['montant'], 0, ',', ' '); ?> AOA
+                                <?php echo number_format($fra['montant'], 0, ',', ' '); ?> Kwz
                             </span>
                         </td>
                         <td>
@@ -289,7 +289,7 @@ include 'layout.php';
                                    placeholder="Ex: Frais de scolarité, Frais d'inscription...">
                         </div>
                         <div class="col-md-6">
-                            <label for="montant" class="form-label">Montant (AOA) *</label>
+                            <label for="montant" class="form-label">Montant (Kwz) *</label>
                             <input type="number" class="form-control" id="montant" name="montant" 
                                    value="<?php echo $_POST['montant'] ?? ''; ?>" 
                                    step="0.01" min="0" required
@@ -342,7 +342,7 @@ include 'layout.php';
                                    value="<?php echo htmlspecialchars($frais_edit['type_frais']); ?>" required>
                         </div>
                         <div class="col-md-6">
-                            <label for="montant_edit" class="form-label">Montant (AOA) *</label>
+                            <label for="montant_edit" class="form-label">Montant (Kwz) *</label>
                             <input type="number" class="form-control" id="montant_edit" name="montant" 
                                    value="<?php echo $frais_edit['montant']; ?>" 
                                    step="0.01" min="0" required>

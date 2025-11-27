@@ -183,7 +183,7 @@ include 'layout.php';
 <!-- Breadcrumb -->
 <nav aria-label="breadcrumb" class="mb-4">
     <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="index.php"><i class="bi bi-house"></i></a></li>
+        <li class="breadcrumb-item"><a href="dashboard.php"><i class="bi bi-house"></i></a></li>
         <li class="breadcrumb-item active" aria-current="page">Élèves</li>
     </ol>
 </nav>

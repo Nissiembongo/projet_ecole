@@ -331,18 +331,71 @@ $stmt_paiements->bindValue(':offset', $offset, PDO::PARAM_INT);
 $stmt_paiements->execute();
 $paiements = $stmt_paiements->fetchAll(PDO::FETCH_ASSOC);
 
-// Statistiques
+// Statistiques avec les mêmes filtres
+$where_stats_conditions = ["p.statut = 'payé'"];
+$stats_params = [];
+
+// Appliquer les mêmes filtres aux statistiques
+if (!empty($filtre_etudiant)) {
+    $where_stats_conditions[] = "p.etudiant_id = :etudiant_id";
+    $stats_params[':etudiant_id'] = $filtre_etudiant;
+}
+
+if (!empty($filtre_classe)) {
+    $where_stats_conditions[] = "e.classe_id = :classe_id";
+    $stats_params[':classe_id'] = $filtre_classe;
+}
+
+if (!empty($filtre_mois)) {
+    $where_stats_conditions[] = "MONTH(p.date_paiement) = :mois";
+    $stats_params[':mois'] = $filtre_mois;
+}
+
+if (!empty($filtre_annee)) {
+    $where_stats_conditions[] = "YEAR(p.date_paiement) = :annee";
+    $stats_params[':annee'] = $filtre_annee;
+}
+
+$where_stats_clause = '';
+if (!empty($where_stats_conditions)) {
+    $where_stats_clause = "WHERE " . implode(" AND ", $where_stats_conditions);
+}
+
+// Requête pour les statistiques avec filtres
 $query_stats = "SELECT 
     COUNT(*) as total_paiements,
-    SUM(montant_paye) as total_montant,
-    AVG(montant_paye) as moyenne_paiement,
-    COUNT(DISTINCT etudiant_id) as etudiants_payants
-FROM paiements 
-WHERE statut = 'payé'";
+    SUM(p.montant_paye) as total_montant,
+    AVG(p.montant_paye) as moyenne_paiement,
+    COUNT(DISTINCT p.etudiant_id) as etudiants_payants
+FROM paiements p 
+JOIN etudiants e ON p.etudiant_id = e.id 
+LEFT JOIN classe c ON e.classe_id = c.id 
+$where_stats_clause";
 
 $stmt_stats = $db->prepare($query_stats);
+foreach ($stats_params as $key => $value) {
+    $stmt_stats->bindValue($key, $value);
+}
 $stmt_stats->execute();
 $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
+
+// Statistiques supplémentaires pour les badges
+$query_stats_supplementaires = "SELECT 
+    COUNT(*) as total_tous_paiements,
+    SUM(montant_paye) as total_tous_montants,
+    COUNT(CASE WHEN statut = 'en attente' THEN 1 END) as paiements_attente,
+    COUNT(CASE WHEN statut = 'annulé' THEN 1 END) as paiements_annules
+FROM paiements p 
+JOIN etudiants e ON p.etudiant_id = e.id 
+LEFT JOIN classe c ON e.classe_id = c.id 
+$where_clause";
+
+$stmt_stats_supp = $db->prepare($query_stats_supplementaires);
+foreach ($params as $key => $value) {
+    $stmt_stats_supp->bindValue($key, $value);
+}
+$stmt_stats_supp->execute();
+$stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -377,77 +430,23 @@ $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
                     </div>
                 <?php endif; ?>
 
-
-                <!-- Statistiques -->
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="card bg-primary text-white">
-                            <div class="card-body">
-                                <div class="d-flex justify-content-between">
-                                    <div>
-                                        <h4 class="mb-0"><?php echo number_format($stats['total_montant'] ?? 0, 0, ',', ' '); ?> AOA</h4>
-                                        <small>Total Collecté</small>
-                                    </div>
-                                    <div class="align-self-center">
-                                        <i class="bi bi-cash-coin fs-1"></i>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card bg-success text-white">
-                            <div class="card-body">
-                                <div class="d-flex justify-content-between">
-                                    <div>
-                                        <h4 class="mb-0"><?php echo $stats['total_paiements'] ?? 0; ?></h4>
-                                        <small>Paiements Validés</small>
-                                    </div>
-                                    <div class="align-self-center">
-                                        <i class="bi bi-check-circle fs-1"></i>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card bg-info text-white">
-                            <div class="card-body">
-                                <div class="d-flex justify-content-between">
-                                    <div>
-                                        <h4 class="mb-0"><?php echo $stats['etudiants_payants'] ?? 0; ?></h4>
-                                        <small>Élèves Ayant Payé</small>
-                                    </div>
-                                    <div class="align-self-center">
-                                        <i class="bi bi-people fs-1"></i>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card bg-warning text-dark">
-                            <div class="card-body">
-                                <div class="d-flex justify-content-between">
-                                    <div>
-                                        <h4 class="mb-0"><?php echo number_format($stats['moyenne_paiement'] ?? 0, 0, ',', ' '); ?> AOA</h4>
-                                        <small>Moyenne par Paiement</small>
-                                    </div>
-                                    <div class="align-self-center">
-                                        <i class="bi bi-graph-up fs-1"></i>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- En-tête avec bouton -->
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h2><i class="bi bi-credit-card me-2"></i>Gestion des Paiements</h2>
-                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ajouterPaiementModal">
-                        <i class="bi bi-plus-circle"></i> Nouveau Paiement
-                    </button>
+                    <div>
+                        <span class="badge bg-info me-2">
+                            Total: <?php echo $stats_supp['total_tous_paiements'] ?? 0; ?> paiements
+                        </span>
+                        <span class="badge bg-warning me-2">
+                            En attente: <?php echo $stats_supp['paiements_attente'] ?? 0; ?>
+                        </span>
+                        <span class="badge bg-danger me-2">
+                            Annulés: <?php echo $stats_supp['paiements_annules'] ?? 0; ?>
+                        </span>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ajouterPaiementModal">
+                            <i class="bi bi-plus-circle"></i> Nouveau Paiement
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Filtres -->
@@ -482,21 +481,22 @@ $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
                                 <select class="form-control" id="filtre_mois" name="mois">
                                     <option value="">Tous les mois</option>
                                     <?php for ($i = 1; $i <= 12; $i++): ?>
-                                    <option value="<?php echo $i; ?>" <?php echo ($filtre_mois == $i) ? 'selected' : ''; ?>>
-                                        <?php echo DateTime::createFromFormat('!m', $i)->format('F'); ?>
-                                    </option>
-                                    <?php endfor; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-2">
-                                <label for="filtre_annee" class="form-label">Année</label>
-                                <select class="form-control" id="filtre_annee" name="annee">
-                                    <?php for ($i = date('Y') - 2; $i <= date('Y') + 1; $i++): ?>
-                                    <option value="<?php echo $i; ?>" <?php echo ($filtre_annee == $i) ? 'selected' : ''; ?>>
-                                        <?php echo $i; ?>
-                                    </option>
-                                    <?php endfor; ?>
-                                </select>
+                                        <option value="<?php echo $i; ?>" <?php echo ($filtre_mois == $i) ? 'selected' : ''; ?>>
+                                            <?php echo DateTime::createFromFormat('!m', $i)->format('F'); ?>
+                                        </option>
+                                        <?php endfor; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="filtre_annee" class="form-label">Année</label>
+                                    <select class="form-control" id="filtre_annee" name="annee">
+                                        <option value="">Toutes les années</option>
+                                        <?php for ($i = date('Y') - 5; $i <= date('Y') + 1; $i++): ?>
+                                            <option value="<?php echo $i; ?>" <?php echo ($filtre_annee == $i)? 'selected' : '';  ?>>
+                                                <?php echo $i; ?>
+                                            </option>
+                                        <?php endfor; ?>
+                                    </select>
                             </div>
                             <div class="col-md-2 d-flex align-items-end">
                                 <button type="submit" class="btn btn-outline-primary w-100">
@@ -506,6 +506,147 @@ $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
                         </form>
                     </div>
                 </div>
+                <!-- Résumé des filtres actifs -->
+                <?php if (!empty($filtre_classe) || !empty($filtre_statut) || !empty($filtre_mois) || !empty($filtre_annee)): ?>
+                    <div class="alert alert-info mb-4">
+                        <h6><i class="bi bi-info-circle"></i> Filtres actifs :</h6>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <?php if (!empty($filtre_classe)): 
+                                $classe_nom = '';
+                                foreach ($classes as $classe) {
+                                    if ($classe['id'] == $filtre_classe) {
+                                        $classe_nom = $classe['nom'];
+                                        break;
+                                    }
+                                }
+                            ?>
+                            <span class="badge bg-primary">
+                                Classe: <?php echo $classe_nom; ?>
+                                <a href="?<?php echo http_build_query(array_diff_key($_GET, ['classe' => ''])); ?>" class="text-white ms-1">
+                                    <i class="bi bi-x"></i>
+                                </a>
+                            </span>
+                            <?php endif; ?>
+
+                            <?php if (!empty($filtre_statut)): ?>
+                            <span class="badge bg-success">
+                                Statut: <?php echo ucfirst($filtre_statut); ?>
+                                <a href="?<?php echo http_build_query(array_diff_key($_GET, ['statut' => ''])); ?>" class="text-white ms-1">
+                                    <i class="bi bi-x"></i>
+                                </a>
+                            </span>
+                            <?php endif; ?>
+
+                            <?php if (!empty($filtre_mois)): ?>
+                            <span class="badge bg-info">
+                                Mois: <?php echo DateTime::createFromFormat('!m', $filtre_mois)->format('F'); ?>
+                                <a href="?<?php echo http_build_query(array_diff_key($_GET, ['mois' => ''])); ?>" class="text-white ms-1">
+                                    <i class="bi bi-x"></i>
+                                </a>
+                            </span>
+                            <?php endif; ?>
+
+                            <?php if (!empty($filtre_annee) && $filtre_annee != date('Y')): ?>
+                            <span class="badge bg-secondary">
+                                Année: <?php echo $filtre_annee; ?>
+                                <a href="?<?php echo http_build_query(array_diff_key($_GET, ['annee' => ''])); ?>" class="text-white ms-1">
+                                    <i class="bi bi-x"></i>
+                                </a>
+                            </span>
+                            <?php endif; ?>
+
+                            <a href="?" class="badge bg-danger">
+                                <i class="bi bi-x-circle"></i> Supprimer tous les filtres
+                            </a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Statistiques avec filtres appliqués -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <h4 class="mb-0"><?php echo number_format($stats['total_montant'] ?? 0, 0, ',', ' '); ?> Kwz</h4>
+                                        <small>Total Collecté</small>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <div class="mt-1">
+                                            <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="align-self-center">
+                                        <i class="bi bi-cash-coin fs-1"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <h4 class="mb-0"><?php echo $stats['total_paiements'] ?? 0; ?></h4>
+                                        <small>Paiements Validés</small>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <div class="mt-1">
+                                            <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="align-self-center">
+                                        <i class="bi bi-check-circle fs-1"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <h4 class="mb-0"><?php echo $stats['etudiants_payants'] ?? 0; ?></h4>
+                                        <small>Élèves Ayant Payé</small>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <div class="mt-1">
+                                            <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="align-self-center">
+                                        <i class="bi bi-people fs-1"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-dark">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between">
+                                    <div>
+                                        <h4 class="mb-0"><?php echo number_format($stats['moyenne_paiement'] ?? 0, 0, ',', ' '); ?> Kwz</h4>
+                                        <small>Moyenne par Paiement</small>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <div class="mt-1">
+                                            <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="align-self-center">
+                                        <i class="bi bi-graph-up fs-1"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                
 
                 <!-- Historique des paiements -->
                 <div class="card">
@@ -555,12 +696,12 @@ $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
                                         <td><?php echo htmlspecialchars($paiement['type_frais']); ?></td>
                                         <td>
                                             <span class="badge bg-success fs-6">
-                                                <?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> AOA
+                                                <?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> Kwz
                                             </span>
                                             <?php if ($solde > 0): ?>
-                                            <br><small class="text-danger">Reste: <?php echo number_format($solde, 0, ',', ' '); ?> AOA</small>
+                                            <br><small class="text-danger">Reste: <?php echo number_format($solde, 0, ',', ' '); ?> Kwz</small>
                                             <?php elseif ($solde < 0): ?>
-                                            <br><small class="text-warning">Excédent: <?php echo number_format(abs($solde), 0, ',', ' '); ?> AOA</small>
+                                            <br><small class="text-warning">Excédent: <?php echo number_format(abs($solde), 0, ',', ' '); ?> Kwz</small>
                                             <?php else: ?>
                                             <br><small class="text-success">Solde réglé</small>
                                             <?php endif; ?>
@@ -726,7 +867,7 @@ $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
                                         <option value="">Sélectionner le type de frais</option>
                                         <?php foreach ($frais_list as $f): ?>
                                             <option value="<?php echo $f['id']; ?>" data-montant="<?php echo $f['montant']; ?>">
-                                                <?php echo $f['type_frais'] . ' - ' . number_format($f['montant'], 2, ',', ' ') . ' AOA'; ?>
+                                                <?php echo $f['type_frais'] . ' - ' . number_format($f['montant'], 2, ',', ' ') . ' Kwz'; ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -738,7 +879,7 @@ $stats = $stmt_stats->fetch(PDO::FETCH_ASSOC);
                                     <label for="montant_paye" class="form-label">Montant payé</label>
                                     <input type="number" class="form-control" id="montant_paye" name="montant_paye" step="0.01" required>
                                     <div class="form-text">
-                                        Montant attendu: <span id="montant-attendu">0</span> AOA
+                                        Montant attendu: <span id="montant-attendu">0</span> Kwz
                                     </div>
                                 </div>
 

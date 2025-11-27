@@ -8,7 +8,7 @@ if (!isset($_SESSION['user_id'])) {
 
 // Vérifier les permissions (seul l'admin peut gérer les utilisateurs)
 if ($_SESSION['role'] != 'admin') {
-    header("Location: index.php");
+    header("Location: dashboard.php");
     exit();
 }
 
@@ -157,7 +157,7 @@ include 'layout.php';
 <!-- Breadcrumb -->
 <nav aria-label="breadcrumb" class="mb-4">
     <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="index.php"><i class="bi bi-house"></i></a></li>
+        <li class="breadcrumb-item"><a href="dashboard.php"><i class="bi bi-house"></i></a></li>
         <li class="breadcrumb-item active" aria-current="page">Utilisateurs</li>
     </ol>
 </nav>

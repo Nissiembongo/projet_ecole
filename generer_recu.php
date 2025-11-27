@@ -451,12 +451,12 @@ $has_filigrane = file_exists($filigrane_image);
             </div>
             <div class="info-row">
                 <div class="info-label">Montant Attendu:</div>
-                <div class="info-value"><?php echo number_format($paiement['montant_attendu'], 0, ',', ' '); ?> AOA</div>
+                <div class="info-value"><?php echo number_format($paiement['montant_attendu'], 0, ',', ' '); ?> Kwz</div>
             </div>
             <div class="info-row">
                 <div class="info-label">Montant Payé:</div>
                 <div class="info-value">
-                    <span class="montant-principal"><?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> AOA</span>
+                    <span class="montant-principal"><?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> Kwz</span>
                 </div>
             </div>
             <div class="info-row">
@@ -466,7 +466,7 @@ $has_filigrane = file_exists($filigrane_image);
                         echo $reste_a_payer > 0 ? 'reste-positif' : 
                              ($reste_a_payer < 0 ? 'reste-negatif' : 'reste-nul'); 
                     ?>">
-                        <?php echo number_format($reste_a_payer, 0, ',', ' '); ?> AOA
+                        <?php echo number_format($reste_a_payer, 0, ',', ' '); ?> Kwz
                         <?php if ($reste_a_payer == 0): ?>
                         <span>(Solde réglé)</span>
                         <?php elseif ($reste_a_payer > 0): ?>

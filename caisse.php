@@ -12,20 +12,47 @@ $db = $database->getConnection();
 $success = $error = '';
 
 // Fonctions utilitaires
-function calculerSoldeActuel($db, $date_solde = null) {
+function calculerSoldeTotal($db) {
+    // Calculer la somme nette de TOUTES les opérations validées
+    $query = "SELECT COALESCE(SUM(montant), 0) as solde_total 
+              FROM caisse 
+              WHERE statut = 'validé'";
+    $stmt = $db->prepare($query);
+    $stmt->execute();
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    return $result['solde_total'] ?? 0;
+}
+
+function calculerSoldeDuJour($db, $date_solde = null) {
     if (!$date_solde) {
         $date_solde = date('Y-m-d');
     }
     
-    $query = "SELECT solde_ouverture + COALESCE(SUM(montant), 0) as solde_actuel 
-              FROM solde_caisse sc 
-              LEFT JOIN caisse c ON DATE(c.date_operation) = sc.date_solde 
-              WHERE sc.date_solde = :date_solde AND c.statut = 'validé'";
-    $stmt = $db->prepare($query);
-    $stmt->bindParam(':date_solde', $date_solde);
-    $stmt->execute();
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $result['solde_actuel'] ?? 0;
+    // Récupérer le solde d'ouverture du jour
+    $query_solde = "SELECT solde_ouverture FROM solde_caisse WHERE date_solde = :date_solde";
+    $stmt_solde = $db->prepare($query_solde);
+    $stmt_solde->bindParam(':date_solde', $date_solde);
+    $stmt_solde->execute();
+    $solde_ouverture = $stmt_solde->fetch(PDO::FETCH_ASSOC);
+    $solde_ouverture = $solde_ouverture ? $solde_ouverture['solde_ouverture'] : 0;
+    
+    // Calculer la somme nette des opérations du jour
+    $query_operations = "SELECT COALESCE(SUM(montant), 0) as somme_nette 
+                         FROM caisse 
+                         WHERE DATE(date_operation) = :date_solde 
+                         AND statut = 'validé'";
+    $stmt_operations = $db->prepare($query_operations);
+    $stmt_operations->bindParam(':date_solde', $date_solde);
+    $stmt_operations->execute();
+    $somme_nette = $stmt_operations->fetch(PDO::FETCH_ASSOC)['somme_nette'];
+    
+    return $solde_ouverture + $somme_nette;
+}
+
+// Fonction de compatibilité (à supprimer progressivement)
+function calculerSoldeActuel($db) {
+    return calculerSoldeTotal($db);
 }
 
 function getOperationsDuJour($db) {
@@ -131,9 +158,9 @@ if ($_POST && isset($_POST['operation_caisse'])) {
         
         // Vérifier le solde pour les retraits
         if ($type_operation == 'retrait') {
-            $solde_actuel = calculerSoldeActuel($db);
-            if ($montant > $solde_actuel) {
-                $error = "Solde insuffisant! Solde disponible: " . number_format($solde_actuel, 0, ',', ' ') . " AOA";
+            $solde_total = calculerSoldeTotal($db);
+            if ($montant > $solde_total) {
+                $error = "Solde insuffisant! Solde disponible: " . number_format($solde_total, 0, ',', ' ') . " Kwz";
             }
         }
         
@@ -186,10 +213,14 @@ if ($_POST && isset($_POST['fermer_caisse'])) {
 }
 
 // Récupérer les données
-$solde_actuel = calculerSoldeActuel($db);
+$solde_total = calculerSoldeTotal($db);
+$solde_du_jour = calculerSoldeDuJour($db);
 $operations_du_jour = getOperationsDuJour($db);
 $statistiques_jour = getStatistiquesJour($db);
 $categories = getCategories($db);
+
+// Pour la compatibilité
+$solde_actuel = $solde_total;
 
 // Récupérer les paiements automatiques du jour
 $query_paiements_auto = "SELECT p.*, e.nom, e.prenom, e.matricule, f.type_frais 
@@ -211,7 +242,7 @@ include 'layout.php';
 <!-- Breadcrumb -->
 <nav aria-label="breadcrumb" class="mb-4">
     <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="index.php"><i class="bi bi-house"></i></a></li>
+        <li class="breadcrumb-item"><a href="dashboard.php"><i class="bi bi-house"></i></a></li>
         <li class="breadcrumb-item active" aria-current="page">Caisse</li>
     </ol>
 </nav>
@@ -257,18 +288,24 @@ include 'layout.php';
         <div class="row align-items-center">
             <div class="col-md-3 text-center">
                 <div class="display-4 fw-bold text-<?php echo ($solde_jour && $solde_jour['statut'] == 'ouvert') ? 'success' : 'secondary'; ?>">
-                    <?php echo number_format($solde_actuel, 0, ',', ' '); ?> AOA
+                    <?php echo number_format($solde_total, 0, ',', ' '); ?> Kwz
                 </div>
-                <small class="text-muted">Solde actuel</small>
+                <small class="text-muted">Solde total de la caisse</small>
             </div>
-            <div class="col-md-9">
+            <div class="col-md-3 text-center">
+                <div class="h4 fw-bold text-info">
+                    <?php echo number_format($solde_du_jour, 0, ',', ' '); ?> Kwz
+                </div>
+                <small class="text-muted">Solde du jour</small>
+            </div>
+            <div class="col-md-6">
                 <div class="row text-center">
                     <div class="col-4">
-                        <h5 class="text-success"><?php echo number_format($statistiques_jour['total_depots'] ?? 0, 0, ',', ' '); ?> AOA</h5>
+                        <h5 class="text-success"><?php echo number_format($statistiques_jour['total_depots'] ?? 0, 0, ',', ' '); ?> Kwz</h5>
                         <small class="text-muted">Dépôts aujourd'hui</small>
                     </div>
                     <div class="col-4">
-                        <h5 class="text-warning"><?php echo number_format($statistiques_jour['total_retraits'] ?? 0, 0, ',', ' '); ?> AOA</h5>
+                        <h5 class="text-warning"><?php echo number_format($statistiques_jour['total_retraits'] ?? 0, 0, ',', ' '); ?> Kwz</h5>
                         <small class="text-muted">Retraits aujourd'hui</small>
                     </div>
                     <div class="col-4">
@@ -283,7 +320,7 @@ include 'layout.php';
                     </span>
                     <small class="text-muted ms-2">
                         <?php if ($solde_jour): ?>
-                        Solde d'ouverture: <?php echo number_format($solde_jour['solde_ouverture'], 0, ',', ' '); ?> AOA
+                        Solde d'ouverture: <?php echo number_format($solde_jour['solde_ouverture'], 0, ',', ' '); ?> Kwz
                         <?php endif; ?>
                     </small>
                 </div>
@@ -295,11 +332,30 @@ include 'layout.php';
 <!-- Cartes de statistiques détaillées -->
 <div class="row g-4 mb-4">
     <div class="col-xl-2 col-md-4">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <i class="bi bi-cash-coin display-6"></i>
+                <h5 class="mt-2">Solde Total</h5>
+                <h4><?php echo number_format($solde_total, 0, ',', ' '); ?> Kwz</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <i class="bi bi-cash display-6"></i>
+                <h5 class="mt-2">Solde Jour</h5>
+                <h4><?php echo number_format($solde_du_jour, 0, ',', ' '); ?> Kwz</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4">
         <div class="card bg-success text-white">
             <div class="card-body text-center">
                 <i class="bi bi-arrow-down-circle display-6"></i>
                 <h5 class="mt-2">Dépôts</h5>
-                <h4><?php echo number_format($statistiques_jour['total_depots'] ?? 0, 0, ',', ' '); ?> AOA</h4>
+                <h4><?php echo number_format($statistiques_jour['total_depots'] ?? 0, 0, ',', ' '); ?> Kwz</h4>
+                <small>Aujourd'hui</small>
             </div>
         </div>
     </div>
@@ -308,25 +364,8 @@ include 'layout.php';
             <div class="card-body text-center">
                 <i class="bi bi-arrow-up-circle display-6"></i>
                 <h5 class="mt-2">Retraits</h5>
-                <h4><?php echo number_format($statistiques_jour['total_retraits'] ?? 0, 0, ',', ' '); ?> AOA</h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4">
-        <div class="card bg-info text-white">
-            <div class="card-body text-center">
-                <i class="bi bi-cash-coin display-6"></i>
-                <h5 class="mt-2">Solde</h5>
-                <h4><?php echo number_format($solde_actuel, 0, ',', ' '); ?> AOA</h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-xl-2 col-md-4">
-        <div class="card bg-primary text-white">
-            <div class="card-body text-center">
-                <i class="bi bi-list-check display-6"></i>
-                <h5 class="mt-2">Opérations</h5>
-                <h4><?php echo $statistiques_jour['total_operations'] ?? 0; ?></h4>
+                <h4><?php echo number_format($statistiques_jour['total_retraits'] ?? 0, 0, ',', ' '); ?> Kwz</h4>
+                <small>Aujourd'hui</small>
             </div>
         </div>
     </div>
@@ -336,6 +375,7 @@ include 'layout.php';
                 <i class="bi bi-credit-card display-6"></i>
                 <h5 class="mt-2">Modes</h5>
                 <h4><?php echo $statistiques_jour['modes_paiement'] ?? 0; ?></h4>
+                <small>Aujourd'hui</small>
             </div>
         </div>
     </div>
@@ -378,7 +418,7 @@ include 'layout.php';
                         </td>
                         <td><?php echo htmlspecialchars($paiement['type_frais']); ?></td>
                         <td class="text-success fw-bold">
-                            <?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> AOA
+                            <?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> Kwz
                         </td>
                         <td>
                             <small><?php echo date('H:i', strtotime($paiement['date_paiement'])); ?></small>
@@ -429,7 +469,7 @@ include 'layout.php';
                         </td>
                         <td>
                             <span class="fw-bold text-<?php echo $operation['type_operation'] == 'dépôt' ? 'success' : 'warning'; ?>">
-                                <?php echo number_format(abs($operation['montant']), 0, ',', ' '); ?> AOA
+                                <?php echo number_format(abs($operation['montant']), 0, ',', ' '); ?> Kwz
                             </span>
                         </td>
                         <td>
@@ -483,7 +523,7 @@ include 'layout.php';
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label for="montant_depot" class="form-label">Montant (AOA) *</label>
+                            <label for="montant_depot" class="form-label">Montant (Kwz) *</label>
                             <input type="number" class="form-control" id="montant_depot" name="montant" 
                                    step="0.01" min="0.01" required placeholder="0.00">
                         </div>
@@ -549,11 +589,11 @@ include 'layout.php';
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label for="montant_retrait" class="form-label">Montant (AOA) *</label>
+                            <label for="montant_retrait" class="form-label">Montant (Kwz) *</label>
                             <input type="number" class="form-control" id="montant_retrait" name="montant" 
                                    step="0.01" min="0.01" required placeholder="0.00">
                             <div class="form-text">Solde disponible: <span id="solde_disponible" class="fw-bold text-success">
-                                <?php echo number_format($solde_actuel, 0, ',', ' '); ?> AOA
+                                <?php echo number_format($solde_total, 0, ',', ' '); ?> Kwz
                             </span></div>
                         </div>
                         <div class="col-12">
@@ -622,19 +662,19 @@ include 'layout.php';
                     
                     <div class="row g-3">
                         <div class="col-12">
-                            <label for="solde_physique" class="form-label">Solde physique constaté (AOA) *</label>
+                            <label for="solde_physique" class="form-label">Solde physique constaté (Kwz) *</label>
                             <input type="number" class="form-control" id="solde_physique" 
                                    step="0.01" placeholder="Saisir le solde physique" 
                                    onchange="calculerEcart()">
                         </div>
                         <div class="col-12">
-                            <label for="solde_fermeture" class="form-label">Solde de fermeture (AOA) *</label>
+                            <label for="solde_fermeture" class="form-label">Solde de fermeture (Kwz) *</label>
                             <input type="number" class="form-control" id="solde_fermeture" name="solde_fermeture" 
-                                   value="<?php echo $solde_actuel; ?>" step="0.01" required readonly>
+                                   value="<?php echo $solde_total; ?>" step="0.01" required readonly>
                         </div>
                         <div class="col-12">
                             <div id="ecart_container" class="alert d-none">
-                                <strong>Écart constaté: <span id="ecart_montant">0</span> AOA</strong>
+                                <strong>Écart constaté: <span id="ecart_montant">0</span> Kwz</strong>
                             </div>
                         </div>
                         <div class="col-12">
@@ -647,11 +687,11 @@ include 'layout.php';
                     <div class="mt-3 p-3 bg-light rounded">
                         <h6>Récapitulatif de la journée:</h6>
                         <ul class="list-unstyled">
-                            <li>Solde d'ouverture: <strong><?php echo number_format($solde_jour['solde_ouverture'], 0, ',', ' '); ?> AOA</strong></li>
-                            <li>Total des dépôts: <strong class="text-success"><?php echo number_format($statistiques_jour['total_depots'] ?? 0, 0, ',', ' '); ?> AOA</strong></li>
-                            <li>Total des retraits: <strong class="text-warning"><?php echo number_format($statistiques_jour['total_retraits'] ?? 0, 0, ',', ' '); ?> AOA</strong></li>
+                            <li>Solde d'ouverture: <strong><?php echo number_format($solde_jour['solde_ouverture'], 0, ',', ' '); ?> Kwz</strong></li>
+                            <li>Total des dépôts: <strong class="text-success"><?php echo number_format($statistiques_jour['total_depots'] ?? 0, 0, ',', ' '); ?> Kwz</strong></li>
+                            <li>Total des retraits: <strong class="text-warning"><?php echo number_format($statistiques_jour['total_retraits'] ?? 0, 0, ',', ' '); ?> Kwz</strong></li>
                             <li>Nombre d'opérations: <strong><?php echo $statistiques_jour['total_operations'] ?? 0; ?></strong></li>
-                            <li>Solde théorique: <strong class="text-primary"><?php echo number_format($solde_actuel, 0, ',', ' '); ?> AOA</strong></li>
+                            <li>Solde théorique: <strong class="text-primary"><?php echo number_format($solde_total, 0, ',', ' '); ?> Kwz</strong></li>
                         </ul>
                     </div>
                 </div>
@@ -679,7 +719,7 @@ var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
 // Validation du montant de retrait
 document.getElementById('montant_retrait')?.addEventListener('blur', function() {
     var montant = parseFloat(this.value);
-    var soldeDisponible = parseFloat(<?php echo $solde_actuel; ?>);
+    var soldeDisponible = parseFloat(<?php echo $solde_total; ?>);
     
     if (montant > soldeDisponible) {
         alert('Montant de retrait supérieur au solde disponible!');
@@ -703,7 +743,7 @@ document.getElementById('montant_retrait')?.addEventListener('blur', function() 
 // Calcul de l'écart pour la fermeture de caisse
 function calculerEcart() {
     var soldePhysique = parseFloat(document.getElementById('solde_physique').value) || 0;
-    var soldeTheorique = parseFloat(<?php echo $solde_actuel; ?>);
+    var soldeTheorique = parseFloat(<?php echo $solde_total; ?>);
     var ecart = soldePhysique - soldeTheorique;
     
     var ecartContainer = document.getElementById('ecart_container');
