@@ -33,11 +33,26 @@ $stmt_classes = $db->prepare($query_classes);
 $stmt_classes->execute();
 $classes = $stmt_classes->fetchAll(PDO::FETCH_ASSOC);
 
+// Récupérer la liste des niveaux distincts
+$query_niveaux = "SELECT DISTINCT niveau FROM classe ORDER BY niveau";
+$stmt_niveaux = $db->prepare($query_niveaux);
+$stmt_niveaux->execute();
+$niveaux = $stmt_niveaux->fetchAll(PDO::FETCH_COLUMN);
+
 // Récupérer la liste des frais
 $query_frais = "SELECT * FROM frais ORDER BY type_frais";
 $stmt_frais = $db->prepare($query_frais);
 $stmt_frais->execute();
 $frais_list = $stmt_frais->fetchAll(PDO::FETCH_ASSOC);
+
+// Filtrer les classes par niveau si un niveau est sélectionné dans les filtres
+$filtre_niveau = $_GET['niveau'] ?? '';
+$classes_filtrees = $classes;
+if (!empty($filtre_niveau)) {
+    $classes_filtrees = array_filter($classes, function($classe) use ($filtre_niveau) {
+        return $classe['niveau'] == $filtre_niveau;
+    });
+}
 
 // Enregistrer un paiement
 if ($_POST && isset($_POST['enregistrer_paiement'])) {
@@ -80,7 +95,7 @@ if ($_POST && isset($_POST['enregistrer_paiement'])) {
                 
                 // 2. Enregistrer automatiquement en caisse
                 // Récupérer les infos de l'étudiant et du frais pour la description
-                $query_info = "SELECT e.nom, e.prenom, e.matricule, c.nom as classe_nom, f.type_frais 
+                $query_info = "SELECT e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.niveau as classe_niveau, f.type_frais 
                               FROM etudiants e 
                               LEFT JOIN classe c ON e.classe_id = c.id 
                               JOIN frais f ON f.id = :frais_id 
@@ -91,7 +106,7 @@ if ($_POST && isset($_POST['enregistrer_paiement'])) {
                 $stmt_info->execute();
                 $info = $stmt_info->fetch(PDO::FETCH_ASSOC);
                 
-                $description = "Paiement " . $info['type_frais'] . " - " . $info['nom'] . " " . $info['prenom'] . " (" . $info['matricule'] . ") - " . $info['classe_nom'];
+                $description = "Paiement " . $info['type_frais'] . " - " . $info['nom'] . " " . $info['prenom'] . " (" . $info['matricule'] . ") - " . $info['classe_nom'] . " (Niv. " . $info['classe_niveau'] . ")";
                 
                 // Déterminer la catégorie en fonction du type de frais
                 $categorie = 'scolarité'; // Catégorie par défaut
@@ -154,7 +169,7 @@ if (isset($_GET['changer_statut'])) {
         $db->beginTransaction();
         
         // Récupérer les infos du paiement
-        $query_info_paiement = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, f.type_frais 
+        $query_info_paiement = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.niveau as classe_niveau, f.type_frais 
                                FROM paiements p 
                                JOIN etudiants e ON p.etudiant_id = e.id 
                                LEFT JOIN classe c ON e.classe_id = c.id 
@@ -167,7 +182,7 @@ if (isset($_GET['changer_statut'])) {
         
         if ($nouveau_statut == 'payé' && $paiement_info['statut'] != 'payé') {
             // Si on passe à "payé", créer l'opération de caisse
-            $description = "Paiement " . $paiement_info['type_frais'] . " - " . $paiement_info['nom'] . " " . $paiement_info['prenom'] . " (" . $paiement_info['matricule'] . ") - " . $paiement_info['classe_nom'];
+            $description = "Paiement " . $paiement_info['type_frais'] . " - " . $paiement_info['nom'] . " " . $paiement_info['prenom'] . " (" . $paiement_info['matricule'] . ") - " . $paiement_info['classe_nom'] . " (Niv. " . $paiement_info['classe_niveau'] . ")";
             
             // Déterminer la catégorie en fonction du type de frais
             $categorie = 'scolarité'; // Catégorie par défaut
@@ -256,6 +271,7 @@ $filtre_classe = $_GET['classe'] ?? '';
 $filtre_statut = $_GET['statut'] ?? '';
 $filtre_mois = $_GET['mois'] ?? '';
 $filtre_annee = $_GET['annee'] ?? '';
+$filtre_niveau = $_GET['niveau'] ?? '';
 
 if (!empty($filtre_etudiant)) {
     $where_conditions[] = "p.etudiant_id = :etudiant_id";
@@ -265,6 +281,11 @@ if (!empty($filtre_etudiant)) {
 if (!empty($filtre_classe)) {
     $where_conditions[] = "e.classe_id = :classe_id";
     $params[':classe_id'] = $filtre_classe;
+}
+
+if (!empty($filtre_niveau)) {
+    $where_conditions[] = "c.niveau = :niveau";
+    $params[':niveau'] = $filtre_niveau;
 }
 
 if (!empty($filtre_statut)) {
@@ -344,6 +365,11 @@ if (!empty($filtre_etudiant)) {
 if (!empty($filtre_classe)) {
     $where_stats_conditions[] = "e.classe_id = :classe_id";
     $stats_params[':classe_id'] = $filtre_classe;
+}
+
+if (!empty($filtre_niveau)) {
+    $where_stats_conditions[] = "c.niveau = :niveau";
+    $stats_params[':niveau'] = $filtre_niveau;
 }
 
 if (!empty($filtre_mois)) {
@@ -457,17 +483,28 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                     <div class="card-body">
                         <form method="GET" class="row g-3">
                             <div class="col-md-3">
-                                <label for="filtre_classe" class="form-label">Classe</label>
-                                <select class="form-control" id="filtre_classe" name="classe">
-                                    <option value="">Toutes les classes</option>
-                                    <?php foreach ($classes as $classe): ?>
-                                    <option value="<?php echo $classe['id']; ?>" <?php echo ($filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
-                                        <?php echo $classe['nom']; ?>
+                                <label for="filtre_niveau" class="form-label">Niveau</label>
+                                <select class="form-control" id="filtre_niveau" name="niveau">
+                                    <option value="">Tous les niveaux</option>
+                                    <?php foreach ($niveaux as $niveau): ?>
+                                    <option value="<?php echo $niveau; ?>" <?php echo ($filtre_niveau == $niveau) ? 'selected' : ''; ?>>
+                                        Niveau <?php echo $niveau; ?>
                                     </option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-md-3">
+                                <label for="filtre_classe" class="form-label">Classe</label>
+                                <select class="form-control" id="filtre_classe" name="classe">
+                                    <option value="">Toutes les classes</option>
+                                    <?php foreach ($classes_filtrees as $classe): ?>
+                                    <option value="<?php echo $classe['id']; ?>" <?php echo ($filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
+                                        <?php echo $classe['nom'] . ' - Niv. ' . $classe['niveau']; ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
                                 <label for="filtre_statut" class="form-label">Statut</label>
                                 <select class="form-control" id="filtre_statut" name="statut">
                                     <option value="">Tous les statuts</option>
@@ -507,21 +544,32 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                     </div>
                 </div>
                 <!-- Résumé des filtres actifs -->
-                <?php if (!empty($filtre_classe) || !empty($filtre_statut) || !empty($filtre_mois)|| !empty($filtre_annee) ): ?>
+                <?php if (!empty($filtre_niveau) || !empty($filtre_classe) || !empty($filtre_statut) || !empty($filtre_mois)|| !empty($filtre_annee) ): ?>
                     <div class="alert alert-info mb-4">
                         <h6><i class="bi bi-info-circle"></i> Filtres actifs :</h6>
                         <div class="d-flex flex-wrap gap-2 mt-2">
+                            <?php if (!empty($filtre_niveau)): ?>
+                            <span class="badge bg-primary">
+                                Niveau: <?php echo $filtre_niveau; ?>
+                                <a href="?<?php echo http_build_query(array_diff_key($_GET, ['niveau' => ''])); ?>" class="text-white ms-1">
+                                    <i class="bi bi-x"></i>
+                                </a>
+                            </span>
+                            <?php endif; ?>
+
                             <?php if (!empty($filtre_classe)): 
                                 $classe_nom = '';
+                                $classe_niveau = '';
                                 foreach ($classes as $classe) {
                                     if ($classe['id'] == $filtre_classe) {
                                         $classe_nom = $classe['nom'];
+                                        $classe_niveau = $classe['niveau'];
                                         break;
                                     }
                                 }
                             ?>
-                            <span class="badge bg-primary">
-                                Classe: <?php echo $classe_nom; ?>
+                            <span class="badge bg-secondary">
+                                Classe: <?php echo $classe_nom . ' (Niv. ' . $classe_niveau . ')'; ?>
                                 <a href="?<?php echo http_build_query(array_diff_key($_GET, ['classe' => ''])); ?>" class="text-white ms-1">
                                     <i class="bi bi-x"></i>
                                 </a>
@@ -547,7 +595,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                             <?php endif; ?>
 
                             <?php if (!empty($filtre_annee) && $filtre_annee != date('Y')): ?>
-                            <span class="badge bg-secondary">
+                            <span class="badge bg-warning">
                                 Année: <?php echo $filtre_annee; ?>
                                 <a href="?<?php echo http_build_query(array_diff_key($_GET, ['annee' => ''])); ?>" class="text-white ms-1">
                                     <i class="bi bi-x"></i>
@@ -571,7 +619,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                     <div>
                                         <h4 class="mb-0"><?php echo number_format($stats['total_montant'] ?? 0, 0, ',', ' '); ?> Kwz</h4>
                                         <small>Total Collecté</small>
-                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois) || !empty($filtre_niveau)): ?>
                                         <div class="mt-1">
                                             <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
                                         </div>
@@ -591,7 +639,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                     <div>
                                         <h4 class="mb-0"><?php echo $stats['total_paiements'] ?? 0; ?></h4>
                                         <small>Paiements Validés</small>
-                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois) || !empty($filtre_niveau)): ?>
                                         <div class="mt-1">
                                             <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
                                         </div>
@@ -611,7 +659,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                     <div>
                                         <h4 class="mb-0"><?php echo $stats['etudiants_payants'] ?? 0; ?></h4>
                                         <small>Élèves Ayant Payé</small>
-                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois) || !empty($filtre_niveau)): ?>
                                         <div class="mt-1">
                                             <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
                                         </div>
@@ -631,7 +679,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                     <div>
                                         <h4 class="mb-0"><?php echo number_format($stats['moyenne_paiement'] ?? 0, 0, ',', ' '); ?> Kwz</h4>
                                         <small>Moyenne par Paiement</small>
-                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois)): ?>
+                                        <?php if (!empty($filtre_statut) || !empty($filtre_classe) || !empty($filtre_mois) || !empty($filtre_niveau)): ?>
                                         <div class="mt-1">
                                             <small><i class="bi bi-funnel"></i> Filtres appliqués</small>
                                         </div>
@@ -645,8 +693,6 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                         </div>
                     </div>
                 </div>
-
-                
 
                 <!-- Historique des paiements -->
                 <div class="card">
@@ -689,9 +735,15 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                             </div>
                                         </td>
                                         <td>
-                                            <span class="badge bg-secondary">
-                                                <?php echo htmlspecialchars($paiement['classe_nom'] ?? 'Non assigné'); ?>
-                                            </span>
+                                            <div>
+                                                <span class="badge bg-secondary">
+                                                    <?php echo htmlspecialchars($paiement['classe_nom'] ?? 'Non assigné'); ?>
+                                                </span>
+                                                <?php if (!empty($paiement['classe_niveau'])): ?>
+                                                <br>
+                                                <small class="text-muted">Niveau: <?php echo htmlspecialchars($paiement['classe_niveau']); ?></small>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                         <td><?php echo htmlspecialchars($paiement['type_frais']); ?></td>
                                         <td>
@@ -842,15 +894,23 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label for="classe_id" class="form-label">Classe</label>
-                                    <select class="form-control" id="classe_id" name="classe_id" required>
-                                        <option value="">Sélectionner une classe</option>
-                                        <?php foreach ($classes as $classe): ?>
-                                            <option value="<?php echo $classe['id']; ?>">
-                                                <?php echo $classe['nom'] . ' - ' . $classe['niveau']; ?>
+                                    <label for="niveau_id" class="form-label">Niveau</label>
+                                    <select class="form-control" id="niveau_id" name="niveau_id" required>
+                                        <option value="">Sélectionner un niveau</option>
+                                        <?php foreach ($niveaux as $niveau): ?>
+                                            <option value="<?php echo $niveau; ?>">
+                                                Niveau <?php echo $niveau; ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="classe_id" class="form-label">Classe</label>
+                                    <select class="form-control" id="classe_id" name="classe_id" required disabled>
+                                        <option value="">Sélectionner d'abord un niveau</option>
+                                    </select>
+                                    <div class="form-text">Veuillez d'abord sélectionner un niveau</div>
                                 </div>
 
                                 <div class="mb-3">
@@ -860,7 +920,18 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                     </select>
                                     <div class="form-text">Veuillez d'abord sélectionner une classe</div>
                                 </div>
+                                 <div class="mb-3">
+                                    <label for="mode_paiement" class="form-label">Mode de paiement</label>
+                                    <select class="form-control" id="mode_paiement" name="mode_paiement" required>
+                                        <option value="espèces">Espèces</option>
+                                        <option value="chèque">Chèque</option>
+                                        <option value="virement">Virement</option>
+                                        <option value="carte">Carte bancaire</option>
+                                    </select>
+                                </div>
+                            </div>
 
+                            <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="frais_id" class="form-label">Type de frais</label>
                                     <select class="form-control" id="frais_id" name="frais_id" required>
@@ -872,9 +943,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                            </div>
 
-                            <div class="col-md-6">
                                 <div class="mb-3">
                                     <label for="montant_paye" class="form-label">Montant payé</label>
                                     <input type="number" class="form-control" id="montant_paye" name="montant_paye" step="0.01" required>
@@ -887,19 +956,9 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                     <label for="date_paiement" class="form-label">Date de paiement</label>
                                     <input type="date" class="form-control" id="date_paiement" 
                                            name="date_paiement" value="<?php echo date('Y-m-d'); ?>" required>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="mode_paiement" class="form-label">Mode de paiement</label>
-                                    <select class="form-control" id="mode_paiement" name="mode_paiement" required>
-                                        <option value="espèces">Espèces</option>
-                                        <option value="chèque">Chèque</option>
-                                        <option value="virement">Virement</option>
-                                        <option value="carte">Carte bancaire</option>
-                                    </select>
-                                </div>
-
-                                <div class="mb-3">
+                                </div> 
+                                <br/>
+                                <div class="mb-4">
                                     <label for="reference" class="form-label">Référence</label>
                                     <input type="text" class="form-control" id="reference" 
                                            name="reference" placeholder="Numéro de chèque, référence virement, etc.">
@@ -921,11 +980,32 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            const niveauSelect = document.getElementById('niveau_id');
             const classeSelect = document.getElementById('classe_id');
             const etudiantSelect = document.getElementById('etudiant_id');
             const fraisSelect = document.getElementById('frais_id');
             const montantPayeInput = document.getElementById('montant_paye');
             const montantAttenduSpan = document.getElementById('montant-attendu');
+            
+            // Gestion du changement de niveau
+            niveauSelect.addEventListener('change', function() {
+                const niveau = this.value;
+                
+                if (niveau) {
+                    // Activer le champ classe
+                    classeSelect.disabled = false;
+                    
+                    // Charger les classes de ce niveau via AJAX
+                    chargerClassesParNiveau(niveau);
+                } else {
+                    // Désactiver et vider les champs classe et étudiant
+                    classeSelect.disabled = true;
+                    classeSelect.innerHTML = '<option value="">Sélectionner d\'abord un niveau</option>';
+                    
+                    etudiantSelect.disabled = true;
+                    etudiantSelect.innerHTML = '<option value="">Sélectionner d\'abord une classe</option>';
+                }
+            });
             
             // Gestion du changement de classe
             classeSelect.addEventListener('change', function() {
@@ -957,6 +1037,37 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                 // Pré-remplir le montant payé avec le montant attendu
                 montantPayeInput.value = montantAttendu;
             });
+            
+            // Fonction pour charger les classes par niveau
+            function chargerClassesParNiveau(niveau) {
+                // Afficher un indicateur de chargement
+                classeSelect.innerHTML = '<option value="">Chargement...</option>';
+                
+                // Envoyer une requête AJAX pour récupérer les classes
+                fetch(`api/classes-par-niveau.php?niveau=${niveau}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Erreur réseau');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        // Vider le select
+                        classeSelect.innerHTML = '<option value="">Sélectionner une classe</option>';
+                        
+                        // Ajouter les options de classes
+                        data.forEach(classe => {
+                            const option = document.createElement('option');
+                            option.value = classe.id;
+                            option.textContent = `${classe.nom} - Niv. ${classe.niveau}`;
+                            classeSelect.appendChild(option);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Erreur lors du chargement des classes:', error);
+                        classeSelect.innerHTML = '<option value="">Erreur de chargement</option>';
+                    });
+            }
             
             // Fonction pour charger les étudiants par classe
             function chargerEtudiantsParClasse(classeId) {

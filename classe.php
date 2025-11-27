@@ -143,7 +143,7 @@ if (isset($_GET['modifier_classe'])) {
 }
 
 // Options pour les selects
-$niveaux = ['8ème','7ème', '6ème', '5ème', '4ème', '3ème', '2nde', '1ère'];
+$niveaux = ['Maternel','Primaire','Secondaire','Humanitaire',];
 $filieres = ['Commerciale et gestion', 'Scientifique', 'Littéraire', 'Pédagogie générale'];
 $annees_scolaires = [
     (date('Y')-1) . '-' . date('Y'),

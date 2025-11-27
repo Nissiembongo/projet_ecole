@@ -39,208 +39,6 @@ $stmt_frais = $db->prepare($query_frais);
 $stmt_frais->execute();
 $frais_list = $stmt_frais->fetchAll(PDO::FETCH_ASSOC);
 
-// Enregistrer un paiement
-if ($_POST && isset($_POST['enregistrer_paiement'])) {
-    try {
-        $etudiant_id = $_POST['etudiant_id'];
-        $frais_id = $_POST['frais_id'];
-        $montant_paye = $_POST['montant_paye'];
-        $date_paiement = $_POST['date_paiement'];
-        $mode_paiement = $_POST['mode_paiement'];
-        $reference = $_POST['reference'];
-        $statut = 'payé'; // Statut par défaut
-        
-        // Vérifier si l'étudiant existe
-        $query_check_etudiant = "SELECT id FROM etudiants WHERE id = :etudiant_id";
-        $stmt_check_etudiant = $db->prepare($query_check_etudiant);
-        $stmt_check_etudiant->bindParam(':etudiant_id', $etudiant_id);
-        $stmt_check_etudiant->execute();
-        
-        if ($stmt_check_etudiant->rowCount() == 0) {
-            $error = "Étudiant sélectionné introuvable!";
-        } else {
-            // Commencer une transaction
-            $db->beginTransaction();
-            
-            try {
-                // 1. Enregistrer le paiement
-                $query_paiement = "INSERT INTO paiements (etudiant_id, frais_id, montant_paye, date_paiement, mode_paiement, reference, statut) 
-                                  VALUES (:etudiant_id, :frais_id, :montant_paye, :date_paiement, :mode_paiement, :reference, :statut)";
-                $stmt_paiement = $db->prepare($query_paiement);
-                $stmt_paiement->bindParam(':etudiant_id', $etudiant_id);
-                $stmt_paiement->bindParam(':frais_id', $frais_id);
-                $stmt_paiement->bindParam(':montant_paye', $montant_paye);
-                $stmt_paiement->bindParam(':date_paiement', $date_paiement);
-                $stmt_paiement->bindParam(':mode_paiement', $mode_paiement);
-                $stmt_paiement->bindParam(':reference', $reference);
-                $stmt_paiement->bindParam(':statut', $statut);
-                $stmt_paiement->execute();
-                
-                $paiement_id = $db->lastInsertId();
-                
-                // 2. Enregistrer automatiquement en caisse
-                // Récupérer les infos de l'étudiant et du frais pour la description
-                $query_info = "SELECT e.nom, e.prenom, e.matricule, c.nom as classe_nom, f.type_frais 
-                              FROM etudiants e 
-                              LEFT JOIN classe c ON e.classe_id = c.id 
-                              JOIN frais f ON f.id = :frais_id 
-                              WHERE e.id = :etudiant_id";
-                $stmt_info = $db->prepare($query_info);
-                $stmt_info->bindParam(':etudiant_id', $etudiant_id);
-                $stmt_info->bindParam(':frais_id', $frais_id);
-                $stmt_info->execute();
-                $info = $stmt_info->fetch(PDO::FETCH_ASSOC);
-                
-                $description = "Paiement " . $info['type_frais'] . " - " . $info['nom'] . " " . $info['prenom'] . " (" . $info['matricule'] . ") - " . $info['classe_nom'];
-                
-                // Déterminer la catégorie en fonction du type de frais
-                $categorie = 'scolarité'; // Catégorie par défaut
-                if (strpos(strtolower($info['type_frais']), 'inscription') !== false) {
-                    $categorie = "Frais d'inscription";
-                } elseif (strpos(strtolower($info['type_frais']), 'divers') !== false) {
-                    $categorie = 'Frais divers';
-                }
-                
-                // Enregistrer en caisse avec la nouvelle structure
-                $query_caisse = "INSERT INTO caisse (type_operation, montant, date_operation, mode_operation, description, reference, categorie, utilisateur_id, paiement_id) 
-                                VALUES ('dépôt', :montant, :date_operation, :mode_operation, :description, :reference, :categorie, :utilisateur_id, :paiement_id)";
-                $stmt_caisse = $db->prepare($query_caisse);
-                $stmt_caisse->bindParam(':montant', $montant_paye);
-                $stmt_caisse->bindParam(':date_operation', $date_paiement);
-                $stmt_caisse->bindParam(':mode_operation', $mode_paiement);
-                $stmt_caisse->bindParam(':description', $description);
-                $stmt_caisse->bindParam(':reference', $reference);
-                $stmt_caisse->bindParam(':categorie', $categorie);
-                $stmt_caisse->bindParam(':utilisateur_id', $_SESSION['user_id']);
-                $stmt_caisse->bindParam(':paiement_id', $paiement_id);
-                $stmt_caisse->execute();
-                
-                $operation_caisse_id = $db->lastInsertId();
-                
-                // Lier le paiement à l'opération de caisse
-                $query_lier = "UPDATE paiements SET operation_caisse_id = :operation_caisse_id WHERE id = :paiement_id";
-                $stmt_lier = $db->prepare($query_lier);
-                $stmt_lier->bindParam(':operation_caisse_id', $operation_caisse_id);
-                $stmt_lier->bindParam(':paiement_id', $paiement_id);
-                $stmt_lier->execute();
-                
-                // Mettre à jour le solde du jour
-                mettreAJourSoldeJour($db, $date_paiement);
-                
-                // Valider la transaction
-                $db->commit();
-                
-                $success = "Paiement enregistré avec succès! Le dépôt a été automatiquement effectué en caisse.";
-                $_POST = array();
-                
-            } catch (Exception $e) {
-                // Annuler la transaction en cas d'erreur
-                $db->rollBack();
-                throw $e;
-            }
-        }
-    } catch (PDOException $e) {
-        $error = "Erreur: " . $e->getMessage();
-    }
-}
-
-// Modifier le statut d'un paiement
-if (isset($_GET['changer_statut'])) {
-    try {
-        $paiement_id = $_GET['changer_statut'];
-        $nouveau_statut = $_GET['statut'];
-        
-        // Commencer une transaction
-        $db->beginTransaction();
-        
-        // Récupérer les infos du paiement
-        $query_info_paiement = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, f.type_frais 
-                               FROM paiements p 
-                               JOIN etudiants e ON p.etudiant_id = e.id 
-                               LEFT JOIN classe c ON e.classe_id = c.id 
-                               JOIN frais f ON p.frais_id = f.id 
-                               WHERE p.id = :id";
-        $stmt_info_paiement = $db->prepare($query_info_paiement);
-        $stmt_info_paiement->bindParam(':id', $paiement_id);
-        $stmt_info_paiement->execute();
-        $paiement_info = $stmt_info_paiement->fetch(PDO::FETCH_ASSOC);
-        
-        if ($nouveau_statut == 'payé' && $paiement_info['statut'] != 'payé') {
-            // Si on passe à "payé", créer l'opération de caisse
-            $description = "Paiement " . $paiement_info['type_frais'] . " - " . $paiement_info['nom'] . " " . $paiement_info['prenom'] . " (" . $paiement_info['matricule'] . ") - " . $paiement_info['classe_nom'];
-            
-            // Déterminer la catégorie en fonction du type de frais
-            $categorie = 'scolarité'; // Catégorie par défaut
-            if (strpos(strtolower($paiement_info['type_frais']), 'inscription') !== false) {
-                $categorie = "Frais d'inscription";
-            } elseif (strpos(strtolower($paiement_info['type_frais']), 'divers') !== false) {
-                $categorie = 'Frais divers';
-            }
-            
-            $query_caisse = "INSERT INTO caisse (type_operation, montant, date_operation, mode_operation, description, reference, categorie, utilisateur_id, paiement_id) 
-                            VALUES ('dépôt', :montant, :date_operation, :mode_operation, :description, :reference, :categorie, :utilisateur_id, :paiement_id)";
-            $stmt_caisse = $db->prepare($query_caisse);
-            $stmt_caisse->bindParam(':montant', $paiement_info['montant_paye']);
-            $stmt_caisse->bindParam(':date_operation', $paiement_info['date_paiement']);
-            $stmt_caisse->bindParam(':mode_operation', $paiement_info['mode_paiement']);
-            $stmt_caisse->bindParam(':description', $description);
-            $stmt_caisse->bindParam(':reference', $paiement_info['reference']);
-            $stmt_caisse->bindParam(':categorie', $categorie);
-            $stmt_caisse->bindParam(':utilisateur_id', $_SESSION['user_id']);
-            $stmt_caisse->bindParam(':paiement_id', $paiement_id);
-            $stmt_caisse->execute();
-            
-            $operation_caisse_id = $db->lastInsertId();
-            
-            // Mettre à jour le paiement avec l'ID de l'opération de caisse
-            $query_update = "UPDATE paiements SET statut = :statut, operation_caisse_id = :operation_caisse_id WHERE id = :id";
-            $stmt_update = $db->prepare($query_update);
-            $stmt_update->bindParam(':statut', $nouveau_statut);
-            $stmt_update->bindParam(':operation_caisse_id', $operation_caisse_id);
-            $stmt_update->bindParam(':id', $paiement_id);
-            $stmt_update->execute();
-            
-            // Mettre à jour le solde du jour
-            mettreAJourSoldeJour($db, $paiement_info['date_paiement']);
-            
-        } elseif ($nouveau_statut != 'payé' && $paiement_info['statut'] == 'payé') {
-            // Si on retire le statut "payé", supprimer l'opération de caisse associée
-            if ($paiement_info['operation_caisse_id']) {
-                $query_delete_caisse = "DELETE FROM caisse WHERE id = :operation_caisse_id";
-                $stmt_delete_caisse = $db->prepare($query_delete_caisse);
-                $stmt_delete_caisse->bindParam(':operation_caisse_id', $paiement_info['operation_caisse_id']);
-                $stmt_delete_caisse->execute();
-            }
-            
-            $query_update = "UPDATE paiements SET statut = :statut, operation_caisse_id = NULL WHERE id = :id";
-            $stmt_update = $db->prepare($query_update);
-            $stmt_update->bindParam(':statut', $nouveau_statut);
-            $stmt_update->bindParam(':id', $paiement_id);
-            $stmt_update->execute();
-            
-            // Mettre à jour le solde du jour
-            mettreAJourSoldeJour($db, $paiement_info['date_paiement']);
-            
-        } else {
-            // Simple changement de statut sans affectation caisse
-            $query_update = "UPDATE paiements SET statut = :statut WHERE id = :id";
-            $stmt_update = $db->prepare($query_update);
-            $stmt_update->bindParam(':statut', $nouveau_statut);
-            $stmt_update->bindParam(':id', $paiement_id);
-            $stmt_update->execute();
-        }
-        
-        $db->commit();
-        $success = "Statut du paiement mis à jour avec succès!" . 
-                  ($nouveau_statut == 'payé' ? " Le dépôt a été automatiquement effectué en caisse." : 
-                  ($paiement_info['statut'] == 'payé' ? " L'opération de caisse associée a été supprimée." : ""));
-        
-    } catch (PDOException $e) {
-        $db->rollBack();
-        $error = "Erreur: " . $e->getMessage();
-    }
-}
-
 // Configuration de la pagination
 $items_par_page = 10;
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
@@ -421,18 +219,48 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
     </div>
     <div class="card-body">
         <form method="GET" class="row g-3" id="form-rapport">
-            <div class="col-md-4">
+            <div class="col-md-3">
+                <label for="rapport_niveau" class="form-label">Niveau</label>
+                <select class="form-control" id="rapport_niveau" name="rapport_niveau">
+                    <option value="">Tous les niveaux</option>
+                    <?php
+                    // Récupérer les niveaux distincts depuis la base de données
+                    $query_niveaux = "SELECT DISTINCT niveau FROM classe ORDER BY niveau";
+                    $stmt_niveaux = $db->prepare($query_niveaux);
+                    $stmt_niveaux->execute();
+                    $niveaux = $stmt_niveaux->fetchAll(PDO::FETCH_COLUMN);
+                    
+                    foreach ($niveaux as $niveau): 
+                    ?>
+                    <option value="<?php echo $niveau; ?>" <?php echo ($_GET['rapport_niveau'] ?? '') == $niveau ? 'selected' : ''; ?>>
+                        <?php echo htmlspecialchars($niveau); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-3">
                 <label for="rapport_classe" class="form-label">Classe</label>
                 <select class="form-control" id="rapport_classe" name="rapport_classe">
                     <option value="">Toutes les classes</option>
-                    <?php foreach ($classes as $classe): ?>
+                    <?php 
+                    // Filtrer les classes par niveau si un niveau est sélectionné
+                    $rapport_niveau = $_GET['rapport_niveau'] ?? '';
+                    $classes_filtrees = $classes;
+                    if (!empty($rapport_niveau)) {
+                        $classes_filtrees = array_filter($classes, function($classe) use ($rapport_niveau) {
+                            return $classe['niveau'] == $rapport_niveau;
+                        });
+                    }
+                    
+                    foreach ($classes_filtrees as $classe): 
+                    ?>
                     <option value="<?php echo $classe['id']; ?>" <?php echo ($_GET['rapport_classe'] ?? '') == $classe['id'] ? 'selected' : ''; ?>>
                         <?php echo $classe['nom'] . ' - ' . $classe['niveau']; ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label for="rapport_type" class="form-label">Type de Rapport</label>
                 <select class="form-control" id="rapport_type" name="rapport_type">
                     <option value="tous" <?php echo ($_GET['rapport_type'] ?? '') == 'tous' ? 'selected' : ''; ?>>Tous les étudiants</option>
@@ -441,7 +269,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                     <option value="detail" <?php echo ($_GET['rapport_type'] ?? '') == 'detail' ? 'selected' : ''; ?>>Détail par étudiant</option>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label for="rapport_frais" class="form-label">Type de Frais</label>
                 <select class="form-control" id="rapport_frais" name="rapport_frais">
                     <option value="">Tous les frais</option>
@@ -470,6 +298,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
         <?php 
         // Génération du rapport
         if (isset($_GET['rapport_type'])) {
+            $rapport_niveau = $_GET['rapport_niveau'] ?? '';
             $rapport_classe = $_GET['rapport_classe'] ?? '';
             $rapport_type = $_GET['rapport_type'] ?? 'tous';
             $rapport_frais = $_GET['rapport_frais'] ?? '';
@@ -477,6 +306,12 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
             // Construire la requête en fonction du type de rapport
             $where_conditions_rapport = [];
             $params_rapport = [];
+            
+            // Ajouter le filtre par niveau
+            if (!empty($rapport_niveau)) {
+                $where_conditions_rapport[] = "c.niveau = :niveau";
+                $params_rapport[':niveau'] = $rapport_niveau;
+            }
             
             if (!empty($rapport_classe)) {
                 $where_conditions_rapport[] = "e.classe_id = :classe_id";
@@ -531,7 +366,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                     $where_clause_rapport
                     GROUP BY e.id
                     HAVING COUNT(p.id) > 0
-                    ORDER BY c.nom, e.nom, e.prenom";
+                    ORDER BY c.niveau, c.nom, e.nom, e.prenom";
                     break;
                     
                 case 'non_payes':
@@ -550,8 +385,8 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                             WHERE statut = 'payé'
                         )";
                         
-                        if (!empty($rapport_classe)) {
-                            $query_rapport .= " AND e.classe_id = :classe_id";
+                        if (!empty($where_conditions_rapport)) {
+                            $query_rapport .= " AND " . implode(" AND ", $where_conditions_rapport);
                         }
                     } else {
                         // Frais spécifique - étudiants n'ayant pas payé ce frais
@@ -567,13 +402,13 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                             WHERE statut = 'payé' AND frais_id = :frais_id
                         )";
                         
-                        if (!empty($rapport_classe)) {
-                            $query_rapport .= " AND e.classe_id = :classe_id";
+                        if (!empty($where_conditions_rapport)) {
+                            $query_rapport .= " AND " . implode(" AND ", $where_conditions_rapport);
                         }
                         // Ajouter le paramètre frais_id pour la sous-requête
                         $params_rapport[':frais_id'] = $rapport_frais;
                     }
-                    $query_rapport .= " ORDER BY c.nom, e.nom, e.prenom";
+                    $query_rapport .= " ORDER BY c.niveau, c.nom, e.nom, e.prenom";
                     break;
                     
                 case 'detail':
@@ -596,7 +431,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                     $where_clause_rapport
                     GROUP BY e.id, f.id
                     HAVING montant_attendu > 0
-                    ORDER BY c.nom, e.nom, e.prenom, f.type_frais";
+                    ORDER BY c.niveau, c.nom, e.nom, e.prenom, f.type_frais";
                     break;
                     
                 default:
@@ -615,7 +450,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                     LEFT JOIN paiements p ON e.id = p.etudiant_id AND p.statut = 'payé'
                     $where_clause_rapport
                     GROUP BY e.id
-                    ORDER BY c.nom, e.nom, e.prenom";
+                    ORDER BY c.niveau, c.nom, e.nom, e.prenom";
                     break;
             }
             
@@ -637,6 +472,11 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                 
                 // Afficher les filtres appliqués
                 $filtres_appliques = [];
+                
+                if (!empty($rapport_niveau)) {
+                    $filtres_appliques[] = "Niveau: " . htmlspecialchars($rapport_niveau);
+                }
+                
                 if (!empty($rapport_classe)) {
                     $classe_nom = '';
                     foreach ($classes as $classe) {
@@ -729,7 +569,14 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                         case 'payes':
                             echo '<td>' . htmlspecialchars($ligne['matricule']) . '</td>';
                             echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
-                            echo '<td>' . htmlspecialchars($ligne['classe_nom']) . '</td>';
+                            echo '<td>';
+                            echo '<div>';
+                            echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
+                            if (!empty($ligne['classe_niveau'])) {
+                                echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                            }
+                            echo '</div>';
+                            echo '</td>';
                             echo '<td class="text-center">' . $ligne['nombre_paiements'] . '</td>';
                             echo '<td class="text-end fw-bold">' . number_format($ligne['total_paye'], 0, ',', ' ') . ' Kwz</td>';
                             echo '<td>' . htmlspecialchars($ligne['types_frais_payes'] ?? '-') . '</td>';
@@ -739,14 +586,28 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                         case 'non_payes':
                             echo '<td>' . htmlspecialchars($ligne['matricule']) . '</td>';
                             echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
-                            echo '<td>' . htmlspecialchars($ligne['classe_nom']) . '</td>';
+                            echo '<td>';
+                            echo '<div>';
+                            echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
+                            if (!empty($ligne['classe_niveau'])) {
+                                echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                            }
+                            echo '</div>';
+                            echo '</td>';
                             echo '<td><span class="badge bg-danger">' . $ligne['statut_paiement'] . '</span></td>';
                             break;
                             
                         case 'detail':
                             echo '<td>' . htmlspecialchars($ligne['matricule']) . '</td>';
                             echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
-                            echo '<td>' . htmlspecialchars($ligne['classe_nom']) . '</td>';
+                            echo '<td>';
+                            echo '<div>';
+                            echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
+                            if (!empty($ligne['classe_niveau'])) {
+                                echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                            }
+                            echo '</div>';
+                            echo '</td>';
                             echo '<td>' . htmlspecialchars($ligne['type_frais']) . '</td>';
                             echo '<td class="text-end">' . number_format($ligne['montant_attendu'], 0, ',', ' ') . ' Kwz</td>';
                             echo '<td class="text-end">' . number_format($ligne['montant_paye'], 0, ',', ' ') . ' Kwz</td>';
@@ -763,7 +624,14 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                         default:
                             echo '<td>' . htmlspecialchars($ligne['matricule']) . '</td>';
                             echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
-                            echo '<td>' . htmlspecialchars($ligne['classe_nom']) . '</td>';
+                            echo '<td>';
+                            echo '<div>';
+                            echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
+                            if (!empty($ligne['classe_niveau'])) {
+                                echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                            }
+                            echo '</div>';
+                            echo '</td>';
                             echo '<td class="text-center">' . $ligne['nombre_paiements'] . '</td>';
                             echo '<td class="text-end">' . number_format($ligne['total_paye'], 0, ',', ' ') . ' Kwz</td>';
                             
@@ -801,6 +669,31 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
 </div>
 
 <script>
+// JavaScript pour mettre à jour dynamiquement les classes selon le niveau sélectionné
+document.addEventListener('DOMContentLoaded', function() {
+    const niveauSelect = document.getElementById('rapport_niveau');
+    const classeSelect = document.getElementById('rapport_classe');
+    
+    niveauSelect.addEventListener('change', function() {
+        const niveau = this.value;
+        
+        // Recharger la page avec le nouveau filtre de niveau
+        if (niveau) {
+            const url = new URL(window.location);
+            url.searchParams.set('rapport_niveau', niveau);
+            // Supprimer le filtre de classe si le niveau change
+            url.searchParams.delete('rapport_classe');
+            window.location.href = url.toString();
+        } else {
+            // Si aucun niveau n'est sélectionné, recharger sans filtre
+            const url = new URL(window.location);
+            url.searchParams.delete('rapport_niveau');
+            url.searchParams.delete('rapport_classe');
+            window.location.href = url.toString();
+        }
+    });
+});
+
 function imprimerRapport() {
     if (!document.getElementById('contenu-rapport')) {
         alert('Veuillez d\'abord générer un rapport avant d\'imprimer.');
