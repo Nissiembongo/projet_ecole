@@ -1,31 +1,83 @@
 <?php
 include 'config.php';
 
+// Rediriger si déjà connecté
+if (isset($_SESSION['user_id']) && isset($_SESSION['logged_in']) && $_SESSION['logged_in']) {
+    header("Location: dashboard.php");
+    exit();
+}
+
+$error = '';
+
 if ($_POST) {
-    $database = new Database();
-    $db = $database->getConnection();
-    
-    $username = $_POST['username'];
-    $password = md5($_POST['password']);
-    
-    $query = "SELECT * FROM utilisateurs WHERE username = :username AND password = :password";
-    $stmt = $db->prepare($query);
-    $stmt->bindParam(':username', $username);
-    $stmt->bindParam(':password', $password);
-    $stmt->execute();
-    
-    if ($stmt->rowCount() == 1) {
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['role'] = $user['role'];
-        $_SESSION['nom_complet'] = $user['nom_complet'];
-        
-        header("Location: dashboard.php");
-        exit();
+    // Validation du token CSRF
+    if (empty($_POST['csrf_token']) || !CSRF::validateToken($_POST['csrf_token'])) {
+        $error = "Erreur de sécurité. Veuillez réessayer.";
     } else {
-        $error = "Nom d'utilisateur ou mot de passe incorrect";
+        $database = new Database();
+        $db = $database->getConnection();
+        
+        // Validation et nettoyage des entrées
+        $username = Validator::validateText($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        
+        if (!$username || empty($password)) {
+            $error = "Nom d'utilisateur ou mot de passe invalide";
+        } else {
+            // Recherche de l'utilisateur - CORRIGÉ selon la structure de la table
+            $query = "SELECT id, username, password, role, nom_complet, statut, derniere_connexion 
+                      FROM utilisateurs 
+                      WHERE username = :username";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':username', $username);
+            $stmt->execute();
+            
+            if ($stmt->rowCount() == 1) {
+                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                // Vérification du mot de passe avec password_verify - CORRIGÉ pour utiliser 'statut' au lieu de 'is_active'
+                if (password_verify($password, $user['password']) && $user['statut'] === 'actif') {
+                    // Mettre à jour la dernière connexion - CORRIGÉ selon le nom du champ
+                    updateLastLogin($db, $user['id']);
+                    
+                    // Régénération de session
+                    session_regenerate_id(true);
+                    
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['role'] = $user['role'];
+                    $_SESSION['nom_complet'] = $user['nom_complet'];
+                    $_SESSION['logged_in'] = true;
+                    $_SESSION['login_time'] = time();
+                    $_SESSION['last_activity'] = time();
+                    
+                    // Journalisation
+                    Logger::logSecurityEvent("Connexion réussie", $user['id']);
+                    
+                    header("Location: dashboard.php");
+                    exit();
+                } else {
+                    $error = "Nom d'utilisateur ou mot de passe incorrect";
+                    // Journalisation
+                    Logger::logSecurityEvent("Tentative de connexion échouée", $user['id'] ?? 'unknown');
+                }
+            } else {
+                // Utilisateur non trouvé - délai artificiel pour éviter l'énumération
+                sleep(2);
+                $error = "Nom d'utilisateur ou mot de passe incorrect";
+            }
+        }
     }
+}
+
+/**
+ * Met à jour la dernière connexion - CORRIGÉ selon le nom du champ
+ */
+function updateLastLogin($db, $user_id) {
+    $query = "UPDATE utilisateurs SET derniere_connexion = NOW() WHERE id = :id";
+    $stmt = $db->prepare($query);
+    $stmt->bindParam(':id', $user_id, PDO::PARAM_INT);
+    $stmt->execute();
 }
 ?>
 
@@ -74,6 +126,9 @@ if ($_POST) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
+        .security-info {
+            font-size: 0.875rem;
+        }
     </style>
 </head>
 <body>
@@ -84,17 +139,19 @@ if ($_POST) {
                     <div class="text-center mb-4">
                         <i class="bi bi-building display-1 text-primary"></i>
                         <h2 class="mt-3 fw-bold">Connexion</h2>
-                        <p class="text-muted">C.S FRANCOPHONE LES BAMBINS SAGES</p>
+                        <p class="text-muted">C.S FRANCOPHONE LES BAMBINS SAGES</p>
                     </div>
 
-                    <?php if (isset($error)): ?>
+                    <?php if (isset($error) && !empty($error)): ?>
                         <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
+                            <i class="bi bi-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?>
                             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                         </div>
                     <?php endif; ?>
 
-                    <form method="POST">
+                    <form method="POST" id="loginForm">
+                        <input type="hidden" name="csrf_token" value="<?php echo CSRF::generateToken(); ?>">
+                        
                         <div class="mb-3">
                             <label for="username" class="form-label fw-semibold">Nom d'utilisateur</label>
                             <div class="input-group">
@@ -102,7 +159,9 @@ if ($_POST) {
                                     <i class="bi bi-person text-muted"></i>
                                 </span>
                                 <input type="text" class="form-control border-start-0" id="username" name="username" 
-                                       placeholder="Votre nom d'utilisateur" required>
+                                       placeholder="Votre nom d'utilisateur" required
+                                       maxlength="50"
+                                       value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>">
                             </div>
                         </div>
                         
@@ -113,7 +172,12 @@ if ($_POST) {
                                     <i class="bi bi-lock text-muted"></i>
                                 </span>
                                 <input type="password" class="form-control border-start-0" id="password" name="password" 
-                                       placeholder="Votre mot de passe" required>
+                                       placeholder="Votre mot de passe" required
+                                       minlength="8"
+                                       maxlength="100">
+                            </div>
+                            <div class="form-text security-info">
+                                <i class="bi bi-info-circle"></i> Le mot de passe doit contenir au moins 8 caractères
                             </div>
                         </div>
                         
@@ -122,16 +186,42 @@ if ($_POST) {
                         </button>
                     </form>
 
-                    <!-- <div class="text-center">
-                        <small class="text-muted">
-                            <strong>Identifiants par défaut:</strong> admin / admin123
-                        </small>
-                    </div> -->
+                    <!-- Aide pour le test -->
+                    <div class="text-center security-info">
+                        <p class="text-muted small">
+                            <i class="bi bi-shield-check"></i> Votre connexion est sécurisée
+                        </p>
+                        <?php if (empty($error)): ?>
+                        <p class="text-muted small mt-2">
+                            <strong>Test:</strong> admin / password
+                        </p>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Validation côté client
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            const password = document.getElementById('password').value;
+            if (password.length < 8) {
+                e.preventDefault();
+                alert('Le mot de passe doit contenir au moins 8 caractères');
+                return false;
+            }
+        });
+        
+        // Masquer les messages d'erreur après 5 secondes
+        setTimeout(function() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
+    </script>
 </body>
 </html>

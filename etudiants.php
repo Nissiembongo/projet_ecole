@@ -1,8 +1,15 @@
 <?php
 include 'config.php';
 
-if (!isset($_SESSION['user_id'])) {
+// Vérification de l'authentification et des autorisations
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || !$_SESSION['logged_in']) {
     header("Location: index.php");
+    exit();
+}
+
+// Vérification des permissions (au moins caissier)
+if (!isset($_SESSION['role']) || ($_SESSION['role'] != 'admin' && $_SESSION['role'] != 'caissier')) {
+    header("Location: dashboard.php");
     exit();
 }
 
@@ -19,115 +26,158 @@ $success = $error = '';
 
 // Ajouter un étudiant
 if ($_POST && isset($_POST['ajouter_etudiant'])) {
-    try {
-        $matricule = $_POST['matricule'];
-        $nom = $_POST['nom'];
-        $prenom = $_POST['prenom'];
-        $classe_id = $_POST['classe_id'];
-        $telephone = $_POST['telephone'];
-        $email = $_POST['email'];
-        
-        // Vérifier si le matricule existe déjà
-        $query_check_matricule = "SELECT id FROM etudiants WHERE matricule = :matricule";
-        $stmt_check_matricule = $db->prepare($query_check_matricule);
-        $stmt_check_matricule->bindParam(':matricule', $matricule);
-        $stmt_check_matricule->execute();
-        
-        if ($stmt_check_matricule->rowCount() > 0) {
-            $error = "Un étudiant avec ce matricule existe déjà!";
-        } else {
-            $query = "INSERT INTO etudiants (matricule, nom, prenom, classe_id, telephone, email, date_inscription) 
-                      VALUES (:matricule, :nom, :prenom, :classe_id, :telephone, :email, CURDATE())";
-            $stmt = $db->prepare($query);
-            $stmt->bindParam(':matricule', $matricule);
-            $stmt->bindParam(':nom', $nom);
-            $stmt->bindParam(':prenom', $prenom);
-            $stmt->bindParam(':classe_id', $classe_id);
-            $stmt->bindParam(':telephone', $telephone);
-            $stmt->bindParam(':email', $email);
-            
-            if ($stmt->execute()) {
-                $success = "Étudiant ajouté avec succès!";
-                $_POST = array(); // Vider le formulaire
+    // Validation CSRF
+    if (empty($_POST['csrf_token']) || !CSRF::validateToken($_POST['csrf_token'])) {
+        $error = "Erreur de sécurité. Veuillez réessayer.";
+    } else {
+        try {
+            // Validation et nettoyage des données
+            $matricule = Validator::validateText($_POST['matricule'] ?? '');
+            $nom = Validator::validateText($_POST['nom'] ?? '');
+            $prenom = Validator::validateText($_POST['prenom'] ?? '');
+            $classe_id = Validator::validateNumber($_POST['classe_id'] ?? 0);
+            $telephone = Validator::validateText($_POST['telephone'] ?? '', 20);
+            $email = Validator::validateEmail($_POST['email'] ?? '');
+
+            // Validation des champs obligatoires
+            if (!$matricule || !$nom || !$prenom || !$classe_id) {
+                $error = "Tous les champs obligatoires doivent être remplis correctement.";
+            } else {
+                // Vérifier si le matricule existe déjà
+                $query_check_matricule = "SELECT id FROM etudiants WHERE matricule = :matricule";
+                $stmt_check_matricule = $db->prepare($query_check_matricule);
+                $stmt_check_matricule->bindParam(':matricule', $matricule);
+                $stmt_check_matricule->execute();
+                
+                if ($stmt_check_matricule->rowCount() > 0) {
+                    $error = "Un étudiant avec ce matricule existe déjà!";
+                } else {
+                    $query = "INSERT INTO etudiants (matricule, nom, prenom, classe_id, telephone, email, date_inscription) 
+                              VALUES (:matricule, :nom, :prenom, :classe_id, :telephone, :email, CURDATE())";
+                    $stmt = $db->prepare($query);
+                    $stmt->bindParam(':matricule', $matricule);
+                    $stmt->bindParam(':nom', $nom);
+                    $stmt->bindParam(':prenom', $prenom);
+                    $stmt->bindParam(':classe_id', $classe_id, PDO::PARAM_INT);
+                    $stmt->bindParam(':telephone', $telephone);
+                    $stmt->bindParam(':email', $email);
+                    
+                    if ($stmt->execute()) {
+                        $success = "Étudiant ajouté avec succès!";
+                        Logger::logSecurityEvent("Nouvel étudiant ajouté: " . $matricule, $_SESSION['user_id']);
+                        $_POST = array(); // Vider le formulaire
+                    }
+                }
             }
+        } catch (PDOException $e) {
+            error_log("Erreur ajout étudiant: " . $e->getMessage());
+            $error = "Une erreur est survenue lors de l'ajout de l'étudiant.";
         }
-    } catch (PDOException $e) {
-        $error = "Erreur: " . $e->getMessage();
     }
 }
 
 // Modifier un étudiant
 if ($_POST && isset($_POST['modifier_etudiant'])) {
-    try {
-        $etudiant_id = $_POST['etudiant_id'];
-        $matricule = $_POST['matricule'];
-        $nom = $_POST['nom'];
-        $prenom = $_POST['prenom'];
-        $classe_id = $_POST['classe_id'];
-        $telephone = $_POST['telephone'];
-        $email = $_POST['email'];
-        
-        // Vérifier si le matricule existe déjà pour un autre étudiant
-        $query_check_matricule = "SELECT id FROM etudiants WHERE matricule = :matricule AND id != :id";
-        $stmt_check_matricule = $db->prepare($query_check_matricule);
-        $stmt_check_matricule->bindParam(':matricule', $matricule);
-        $stmt_check_matricule->bindParam(':id', $etudiant_id);
-        $stmt_check_matricule->execute();
-        
-        if ($stmt_check_matricule->rowCount() > 0) {
-            $error = "Un autre étudiant avec ce matricule existe déjà!";
-        } else {
-            $query = "UPDATE etudiants SET matricule = :matricule, nom = :nom, prenom = :prenom, 
-                     classe_id = :classe_id, telephone = :telephone, email = :email 
-                     WHERE id = :id";
-            $stmt = $db->prepare($query);
-            $stmt->bindParam(':matricule', $matricule);
-            $stmt->bindParam(':nom', $nom);
-            $stmt->bindParam(':prenom', $prenom);
-            $stmt->bindParam(':classe_id', $classe_id);
-            $stmt->bindParam(':telephone', $telephone);
-            $stmt->bindParam(':email', $email);
-            $stmt->bindParam(':id', $etudiant_id);
-            
-            if ($stmt->execute()) {
-                $success = "Étudiant modifié avec succès!";
+    // Validation CSRF
+    if (empty($_POST['csrf_token']) || !CSRF::validateToken($_POST['csrf_token'])) {
+        $error = "Erreur de sécurité. Veuillez réessayer.";
+    } else {
+        try {
+            // Validation et nettoyage des données
+            $etudiant_id = Validator::validateNumber($_POST['etudiant_id'] ?? 0);
+            $matricule = Validator::validateText($_POST['matricule'] ?? '');
+            $nom = Validator::validateText($_POST['nom'] ?? '');
+            $prenom = Validator::validateText($_POST['prenom'] ?? '');
+            $classe_id = Validator::validateNumber($_POST['classe_id'] ?? 0);
+            $telephone = Validator::validateText($_POST['telephone'] ?? '', 20);
+            $email = Validator::validateEmail($_POST['email'] ?? '');
+
+            if (!$etudiant_id || !$matricule || !$nom || !$prenom || !$classe_id) {
+                $error = "Tous les champs obligatoires doivent être remplis correctement.";
+            } else {
+                // Vérifier si le matricule existe déjà pour un autre étudiant
+                $query_check_matricule = "SELECT id FROM etudiants WHERE matricule = :matricule AND id != :id";
+                $stmt_check_matricule = $db->prepare($query_check_matricule);
+                $stmt_check_matricule->bindParam(':matricule', $matricule);
+                $stmt_check_matricule->bindParam(':id', $etudiant_id, PDO::PARAM_INT);
+                $stmt_check_matricule->execute();
+                
+                if ($stmt_check_matricule->rowCount() > 0) {
+                    $error = "Un autre étudiant avec ce matricule existe déjà!";
+                } else {
+                    $query = "UPDATE etudiants SET matricule = :matricule, nom = :nom, prenom = :prenom, 
+                             classe_id = :classe_id, telephone = :telephone, email = :email 
+                             WHERE id = :id";
+                    $stmt = $db->prepare($query);
+                    $stmt->bindParam(':matricule', $matricule);
+                    $stmt->bindParam(':nom', $nom);
+                    $stmt->bindParam(':prenom', $prenom);
+                    $stmt->bindParam(':classe_id', $classe_id, PDO::PARAM_INT);
+                    $stmt->bindParam(':telephone', $telephone);
+                    $stmt->bindParam(':email', $email);
+                    $stmt->bindParam(':id', $etudiant_id, PDO::PARAM_INT);
+                    
+                    if ($stmt->execute()) {
+                        $success = "Étudiant modifié avec succès!";
+                        Logger::logSecurityEvent("Étudiant modifié: " . $matricule, $_SESSION['user_id']);
+                    }
+                }
             }
+        } catch (PDOException $e) {
+            error_log("Erreur modification étudiant: " . $e->getMessage());
+            $error = "Une erreur est survenue lors de la modification de l'étudiant.";
         }
-    } catch (PDOException $e) {
-        $error = "Erreur: " . $e->getMessage();
     }
 }
 
 // Supprimer un étudiant
 if (isset($_GET['supprimer_etudiant'])) {
-    try {
-        $etudiant_id = $_GET['supprimer_etudiant'];
+    // Vérifier les permissions (seul l'admin peut supprimer)
+    if ($_SESSION['role'] != 'admin') {
+        $error = "Vous n'avez pas la permission de supprimer des étudiants.";
+    } else {
+        $etudiant_id = Validator::validateNumber($_GET['supprimer_etudiant'] ?? 0);
         
-        // Vérifier s'il y a des paiements associés à cet étudiant
-        $query_check_paiements = "SELECT COUNT(*) as total FROM paiements WHERE etudiant_id = :etudiant_id";
-        $stmt_check_paiements = $db->prepare($query_check_paiements);
-        $stmt_check_paiements->bindParam(':etudiant_id', $etudiant_id);
-        $stmt_check_paiements->execute();
-        $has_paiements = $stmt_check_paiements->fetch(PDO::FETCH_ASSOC)['total'] > 0;
-        
-        if ($has_paiements) {
-            $error = "Impossible de supprimer cet étudiant car il a des paiements enregistrés. Vous devez d'abord supprimer ses paiements.";
-        } else {
-            $query = "DELETE FROM etudiants WHERE id = :id";
-            $stmt = $db->prepare($query);
-            $stmt->bindParam(':id', $etudiant_id);
-            
-            if ($stmt->execute()) {
-                $success = "Étudiant supprimé avec succès!";
+        if ($etudiant_id) {
+            try {
+                // Vérifier s'il y a des paiements associés à cet étudiant
+                $query_check_paiements = "SELECT COUNT(*) as total FROM paiements WHERE etudiant_id = :etudiant_id";
+                $stmt_check_paiements = $db->prepare($query_check_paiements);
+                $stmt_check_paiements->bindParam(':etudiant_id', $etudiant_id, PDO::PARAM_INT);
+                $stmt_check_paiements->execute();
+                $has_paiements = $stmt_check_paiements->fetch(PDO::FETCH_ASSOC)['total'] > 0;
+                
+                if ($has_paiements) {
+                    $error = "Impossible de supprimer cet étudiant car il a des paiements enregistrés. Vous devez d'abord supprimer ses paiements.";
+                } else {
+                    // Récupérer les infos de l'étudiant pour le log
+                    $query_info = "SELECT matricule, nom, prenom FROM etudiants WHERE id = :id";
+                    $stmt_info = $db->prepare($query_info);
+                    $stmt_info->bindParam(':id', $etudiant_id, PDO::PARAM_INT);
+                    $stmt_info->execute();
+                    $etudiant_info = $stmt_info->fetch(PDO::FETCH_ASSOC);
+                    
+                    $query = "DELETE FROM etudiants WHERE id = :id";
+                    $stmt = $db->prepare($query);
+                    $stmt->bindParam(':id', $etudiant_id, PDO::PARAM_INT);
+                    
+                    if ($stmt->execute()) {
+                        $success = "Étudiant supprimé avec succès!";
+                        Logger::logSecurityEvent("Étudiant supprimé: " . $etudiant_info['matricule'] . " - " . $etudiant_info['nom'] . " " . $etudiant_info['prenom'], $_SESSION['user_id']);
+                    }
+                }
+            } catch (PDOException $e) {
+                error_log("Erreur suppression étudiant: " . $e->getMessage());
+                $error = "Une erreur est survenue lors de la suppression de l'étudiant.";
             }
+        } else {
+            $error = "ID étudiant invalide.";
         }
-    } catch (PDOException $e) {
-        $error = "Erreur: " . $e->getMessage();
     }
 }
 
 // Récupérer le filtre classe
-$filtre_classe = $_GET['classe'] ?? '';
+$filtre_classe = Validator::validateNumber($_GET['classe'] ?? 0) ?: '';
 
 // Construire la requête avec filtre
 $where_condition = '';
@@ -157,21 +207,23 @@ $classe_filtree_nom = '';
 if (!empty($filtre_classe) && $filtre_classe !== 'all') {
     $query_classe_filtree = "SELECT nom FROM classe WHERE id = :classe_id";
     $stmt_classe_filtree = $db->prepare($query_classe_filtree);
-    $stmt_classe_filtree->bindParam(':classe_id', $filtre_classe);
+    $stmt_classe_filtree->bindParam(':classe_id', $filtre_classe, PDO::PARAM_INT);
     $stmt_classe_filtree->execute();
     $classe_filtree = $stmt_classe_filtree->fetch(PDO::FETCH_ASSOC);
-    $classe_filtree_nom = $classe_filtree['nom'] ?? '';
+    $classe_filtree_nom = htmlspecialchars($classe_filtree['nom'] ?? '');
 }
 
 // Récupérer un étudiant spécifique pour modification
 $etudiant_a_modifier = null;
 if (isset($_GET['modifier_etudiant'])) {
-    $etudiant_id = $_GET['modifier_etudiant'];
-    $query_etudiant = "SELECT * FROM etudiants WHERE id = :id";
-    $stmt_etudiant = $db->prepare($query_etudiant);
-    $stmt_etudiant->bindParam(':id', $etudiant_id);
-    $stmt_etudiant->execute();
-    $etudiant_a_modifier = $stmt_etudiant->fetch(PDO::FETCH_ASSOC);
+    $etudiant_id = Validator::validateNumber($_GET['modifier_etudiant'] ?? 0);
+    if ($etudiant_id) {
+        $query_etudiant = "SELECT * FROM etudiants WHERE id = :id";
+        $stmt_etudiant = $db->prepare($query_etudiant);
+        $stmt_etudiant->bindParam(':id', $etudiant_id, PDO::PARAM_INT);
+        $stmt_etudiant->execute();
+        $etudiant_a_modifier = $stmt_etudiant->fetch(PDO::FETCH_ASSOC);
+    }
 }
 ?>
 
@@ -197,14 +249,14 @@ include 'layout.php';
 
 <?php if (!empty($success)): ?>
     <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <i class="bi bi-check-circle"></i> <?php echo $success; ?>
+        <i class="bi bi-check-circle"></i> <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php endif; ?>
 
 <?php if (!empty($error)): ?>
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
+        <i class="bi bi-exclamation-triangle"></i> <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php endif; ?>
@@ -247,7 +299,7 @@ include 'layout.php';
                             $stmt_annee = $db->prepare($query_annee);
                             $stmt_annee->execute();
                             $annee = $stmt_annee->fetch(PDO::FETCH_ASSOC);
-                            echo $annee ? $annee['annee_scolaire'] : date('Y') . '-' . (date('Y') + 1);
+                            echo $annee ? htmlspecialchars($annee['annee_scolaire']) : date('Y') . '-' . (date('Y') + 1);
                             ?>
                         </h4>
                         <small class="text-muted">Année Scolaire</small>
@@ -266,7 +318,7 @@ include 'layout.php';
                             
                             $stmt_aujourdhui = $db->prepare($query_aujourdhui);
                             if (!empty($filtre_classe) && $filtre_classe !== 'all') {
-                                $stmt_aujourdhui->bindParam(':classe_id', $filtre_classe);
+                                $stmt_aujourdhui->bindParam(':classe_id', $filtre_classe, PDO::PARAM_INT);
                             }
                             $stmt_aujourdhui->execute();
                             echo $stmt_aujourdhui->fetch(PDO::FETCH_ASSOC)['total'];
@@ -305,7 +357,7 @@ include 'layout.php';
                 <?php foreach ($classes as $classe): ?>
                 <li><a class="dropdown-item <?php echo $filtre_classe == $classe['id'] ? 'active' : ''; ?>" 
                        href="?classe=<?php echo $classe['id']; ?>">
-                    <i class="bi bi-person"></i> <?php echo $classe['nom']; ?>
+                    <i class="bi bi-person"></i> <?php echo htmlspecialchars($classe['nom']); ?>
                 </a></li>
                 <?php endforeach; ?>
             </ul>
@@ -330,24 +382,24 @@ include 'layout.php';
                     <?php foreach ($etudiants as $etudiant): ?>
                     <tr>
                         <td>
-                            <span class="badge bg-primary"><?php echo $etudiant['matricule']; ?></span>
+                            <span class="badge bg-primary"><?php echo htmlspecialchars($etudiant['matricule']); ?></span>
                         </td>
                         <td>
-                            <strong><?php echo $etudiant['nom'] . ' ' . $etudiant['prenom']; ?></strong>
+                            <strong><?php echo htmlspecialchars($etudiant['nom'] . ' ' . $etudiant['prenom']); ?></strong>
                         </td>
                         <td>
-                            <span class="badge bg-secondary"><?php echo $etudiant['classe_nom'] ?? 'Non assigné'; ?></span>
+                            <span class="badge bg-secondary"><?php echo htmlspecialchars($etudiant['classe_nom'] ?? 'Non assigné'); ?></span>
                         </td>
                         <td>
-                            <small class="text-muted"><?php echo $etudiant['niveau'] ?? '-'; ?></small>
+                            <small class="text-muted"><?php echo htmlspecialchars($etudiant['niveau'] ?? '-'); ?></small>
                         </td>
                         <td>
                             <div>
                                 <?php if ($etudiant['telephone']): ?>
-                                <small class="text-muted"><i class="bi bi-phone"></i> <?php echo $etudiant['telephone']; ?></small><br>
+                                <small class="text-muted"><i class="bi bi-phone"></i> <?php echo htmlspecialchars($etudiant['telephone']); ?></small><br>
                                 <?php endif; ?>
                                 <?php if ($etudiant['email']): ?>
-                                <small class="text-muted"><i class="bi bi-envelope"></i> <?php echo $etudiant['email']; ?></small>
+                                <small class="text-muted"><i class="bi bi-envelope"></i> <?php echo htmlspecialchars($etudiant['email']); ?></small>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -367,6 +419,7 @@ include 'layout.php';
                                         data-bs-toggle="tooltip" title="Modifier">
                                     <i class="bi bi-pencil"></i>
                                 </button>
+                                <?php if ($_SESSION['role'] == 'admin'): ?>
                                 <a href="?supprimer_etudiant=<?php echo $etudiant['id']; ?>" 
                                    class="btn btn-outline-danger" 
                                    data-bs-toggle="tooltip" 
@@ -374,6 +427,7 @@ include 'layout.php';
                                    onclick="return confirm('Êtes-vous sûr de vouloir supprimer l\\'élève <?php echo htmlspecialchars(addslashes($etudiant['nom'] . ' ' . $etudiant['prenom'])); ?> ? Cette action est irréversible.')">
                                     <i class="bi bi-trash"></i>
                                 </a>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>
@@ -421,12 +475,14 @@ include 'layout.php';
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?php echo CSRF::generateToken(); ?>">
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label for="matricule" class="form-label">Matricule *</label>
                             <input type="text" class="form-control" id="matricule" name="matricule" required 
-                                   placeholder="Ex: MAT2024001">
+                                   placeholder="Ex: MAT2024001" maxlength="20"
+                                   value="<?php echo isset($_POST['matricule']) ? htmlspecialchars($_POST['matricule']) : ''; ?>">
                         </div>
                         <div class="col-md-6">
                             <label for="classe_id" class="form-label">Classe *</label>
@@ -434,8 +490,8 @@ include 'layout.php';
                                 <option value="">Sélectionner une classe</option>
                                 <?php foreach ($classes as $classe): ?>
                                 <option value="<?php echo $classe['id']; ?>" 
-                                    <?php echo (!empty($filtre_classe) && $filtre_classe !== 'all' && $filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
-                                    <?php echo $classe['nom'] . ' - ' . $classe['niveau']; ?>
+                                    <?php echo (!empty($_POST['classe_id']) && $_POST['classe_id'] == $classe['id']) || (!empty($filtre_classe) && $filtre_classe !== 'all' && $filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']); ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
@@ -443,22 +499,26 @@ include 'layout.php';
                         <div class="col-md-6">
                             <label for="nom" class="form-label">Nom *</label>
                             <input type="text" class="form-control" id="nom" name="nom" required 
-                                   placeholder="Nom de famille">
+                                   placeholder="Nom de famille" maxlength="50"
+                                   value="<?php echo isset($_POST['nom']) ? htmlspecialchars($_POST['nom']) : ''; ?>">
                         </div>
                         <div class="col-md-6">
                             <label for="prenom" class="form-label">Prénom *</label>
                             <input type="text" class="form-control" id="prenom" name="prenom" required 
-                                   placeholder="Prénom">
+                                   placeholder="Prénom" maxlength="50"
+                                   value="<?php echo isset($_POST['prenom']) ? htmlspecialchars($_POST['prenom']) : ''; ?>">
                         </div>
                         <div class="col-md-6">
                             <label for="telephone" class="form-label">Téléphone</label>
                             <input type="text" class="form-control" id="telephone" name="telephone" 
-                                   placeholder="+243 XX XXX XX XX">
+                                   placeholder="+243 XX XXX XX XX" maxlength="20"
+                                   value="<?php echo isset($_POST['telephone']) ? htmlspecialchars($_POST['telephone']) : ''; ?>">
                         </div>
                         <div class="col-md-6">
                             <label for="email" class="form-label">Email</label>
                             <input type="email" class="form-control" id="email" name="email" 
-                                   placeholder="email@exemple.com">
+                                   placeholder="email@exemple.com" maxlength="100"
+                                   value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email']) : ''; ?>">
                         </div>
                     </div>
                 </div>
@@ -482,12 +542,13 @@ include 'layout.php';
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?php echo CSRF::generateToken(); ?>">
                 <input type="hidden" id="modifier_etudiant_id" name="etudiant_id">
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label for="modifier_matricule" class="form-label">Matricule *</label>
-                            <input type="text" class="form-control" id="modifier_matricule" name="matricule" required>
+                            <input type="text" class="form-control" id="modifier_matricule" name="matricule" required maxlength="20">
                         </div>
                         <div class="col-md-6">
                             <label for="modifier_classe_id" class="form-label">Classe *</label>
@@ -495,26 +556,26 @@ include 'layout.php';
                                 <option value="">Sélectionner une classe</option>
                                 <?php foreach ($classes as $classe): ?>
                                 <option value="<?php echo $classe['id']; ?>">
-                                    <?php echo $classe['nom'] . ' - ' . $classe['niveau']; ?>
+                                    <?php echo htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']); ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-md-6">
                             <label for="modifier_nom" class="form-label">Nom *</label>
-                            <input type="text" class="form-control" id="modifier_nom" name="nom" required>
+                            <input type="text" class="form-control" id="modifier_nom" name="nom" required maxlength="50">
                         </div>
                         <div class="col-md-6">
                             <label for="modifier_prenom" class="form-label">Prénom *</label>
-                            <input type="text" class="form-control" id="modifier_prenom" name="prenom" required>
+                            <input type="text" class="form-control" id="modifier_prenom" name="prenom" required maxlength="50">
                         </div>
                         <div class="col-md-6">
                             <label for="modifier_telephone" class="form-label">Téléphone</label>
-                            <input type="text" class="form-control" id="modifier_telephone" name="telephone">
+                            <input type="text" class="form-control" id="modifier_telephone" name="telephone" maxlength="20">
                         </div>
                         <div class="col-md-6">
                             <label for="modifier_email" class="form-label">Email</label>
-                            <input type="email" class="form-control" id="modifier_email" name="email">
+                            <input type="email" class="form-control" id="modifier_email" name="email" maxlength="100">
                         </div>
                     </div>
                 </div>

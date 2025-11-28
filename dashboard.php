@@ -1,7 +1,8 @@
 <?php
 include 'config.php';
 
-if (!isset($_SESSION['user_id'])) {
+// Vérification de l'authentification
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || !$_SESSION['logged_in']) {
     header("Location: index.php");
     exit();
 }
@@ -21,13 +22,13 @@ $stmt_annees = $db->prepare($query_annees);
 $stmt_annees->execute();
 $annees_scolaires = $stmt_annees->fetchAll(PDO::FETCH_ASSOC);
 
-// Récupérer les filtres
-$filtre_classe = $_GET['classe'] ?? '';
-$filtre_annee_scolaire = $_GET['annee_scolaire'] ?? '';
+// Récupérer et valider les filtres
+$filtre_classe = Validator::validateNumber($_GET['classe'] ?? 0) ?: '';
+$filtre_annee_scolaire = Validator::validateText($_GET['annee_scolaire'] ?? '');
 
 // Si aucune année n'est sélectionnée, prendre la plus récente
 if (empty($filtre_annee_scolaire) && !empty($annees_scolaires)) {
-    $filtre_annee_scolaire = $annees_scolaires[0]['annee_scolaire'];
+    $filtre_annee_scolaire = htmlspecialchars($annees_scolaires[0]['annee_scolaire']);
 }
 
 // Construire les conditions WHERE pour les requêtes
@@ -53,135 +54,177 @@ if (!empty($where_conditions)) {
 $stats = [];
 
 // Requête pour les étudiants
-$query_etudiants = "SELECT COUNT(*) as total FROM etudiants e 
-                   LEFT JOIN classe c ON e.classe_id = c.id";
-if (!empty($where_conditions)) {
-    $query_etudiants .= " WHERE " . implode(" AND ", $where_conditions);
-}
-$stmt_etudiants = $db->prepare($query_etudiants);
-if (!empty($params)) {
-    foreach ($params as $key => $value) {
-        $stmt_etudiants->bindValue($key, $value);
+try {
+    $query_etudiants = "SELECT COUNT(*) as total FROM etudiants e 
+                       LEFT JOIN classe c ON e.classe_id = c.id";
+    if (!empty($where_conditions)) {
+        $query_etudiants .= " WHERE " . implode(" AND ", $where_conditions);
     }
+    $stmt_etudiants = $db->prepare($query_etudiants);
+    if (!empty($params)) {
+        foreach ($params as $key => $value) {
+            $stmt_etudiants->bindValue($key, $value);
+        }
+    }
+    $stmt_etudiants->execute();
+    $stats['etudiants'] = $stmt_etudiants->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+} catch (PDOException $e) {
+    error_log("Erreur statistiques étudiants: " . $e->getMessage());
+    $stats['etudiants'] = 0;
 }
-$stmt_etudiants->execute();
-$stats['etudiants'] = $stmt_etudiants->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
 // Requête pour les paiements totaux
-$query_paiements = "SELECT SUM(p.montant_paye) as total 
-                   FROM paiements p 
-                   JOIN etudiants e ON p.etudiant_id = e.id 
-                   LEFT JOIN classe c ON e.classe_id = c.id 
-                   WHERE p.statut = 'payé'";
-if (!empty($where_conditions)) {
-    $query_paiements .= " AND " . implode(" AND ", $where_conditions);
-}
-$stmt_paiements = $db->prepare($query_paiements);
-if (!empty($params)) {
-    foreach ($params as $key => $value) {
-        $stmt_paiements->bindValue($key, $value);
+try {
+    $query_paiements = "SELECT SUM(p.montant_paye) as total 
+                       FROM paiements p 
+                       JOIN etudiants e ON p.etudiant_id = e.id 
+                       LEFT JOIN classe c ON e.classe_id = c.id 
+                       WHERE p.statut = 'payé'";
+    if (!empty($where_conditions)) {
+        $query_paiements .= " AND " . implode(" AND ", $where_conditions);
     }
+    $stmt_paiements = $db->prepare($query_paiements);
+    if (!empty($params)) {
+        foreach ($params as $key => $value) {
+            $stmt_paiements->bindValue($key, $value);
+        }
+    }
+    $stmt_paiements->execute();
+    $stats['paiements'] = $stmt_paiements->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+} catch (PDOException $e) {
+    error_log("Erreur statistiques paiements: " . $e->getMessage());
+    $stats['paiements'] = 0;
 }
-$stmt_paiements->execute();
-$stats['paiements'] = $stmt_paiements->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
 // Requête pour les frais (pas de filtre par classe/année)
-$query_frais = "SELECT COUNT(*) as total FROM frais";
-$stmt_frais = $db->prepare($query_frais);
-$stmt_frais->execute();
-$stats['frais'] = $stmt_frais->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+try {
+    $query_frais = "SELECT COUNT(*) as total FROM frais WHERE statut = 'actif'";
+    $stmt_frais = $db->prepare($query_frais);
+    $stmt_frais->execute();
+    $stats['frais'] = $stmt_frais->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+} catch (PDOException $e) {
+    error_log("Erreur statistiques frais: " . $e->getMessage());
+    $stats['frais'] = 0;
+}
 
 // Requête pour les paiements du mois (avec année scolaire)
-$query_paiements_mois = "SELECT SUM(p.montant_paye) as total 
-                        FROM paiements p 
-                        JOIN etudiants e ON p.etudiant_id = e.id 
-                        LEFT JOIN classe c ON e.classe_id = c.id 
-                        WHERE MONTH(p.date_paiement) = MONTH(CURDATE()) 
-                        AND YEAR(p.date_paiement) = YEAR(CURDATE())
-                        AND p.statut = 'payé'";
-if (!empty($where_conditions)) {
-    $query_paiements_mois .= " AND " . implode(" AND ", $where_conditions);
-}
-$stmt_paiements_mois = $db->prepare($query_paiements_mois);
-if (!empty($params)) {
-    foreach ($params as $key => $value) {
-        $stmt_paiements_mois->bindValue($key, $value);
+try {
+    $query_paiements_mois = "SELECT SUM(p.montant_paye) as total 
+                            FROM paiements p 
+                            JOIN etudiants e ON p.etudiant_id = e.id 
+                            LEFT JOIN classe c ON e.classe_id = c.id 
+                            WHERE MONTH(p.date_paiement) = MONTH(CURDATE()) 
+                            AND YEAR(p.date_paiement) = YEAR(CURDATE())
+                            AND p.statut = 'payé'";
+    if (!empty($where_conditions)) {
+        $query_paiements_mois .= " AND " . implode(" AND ", $where_conditions);
     }
+    $stmt_paiements_mois = $db->prepare($query_paiements_mois);
+    if (!empty($params)) {
+        foreach ($params as $key => $value) {
+            $stmt_paiements_mois->bindValue($key, $value);
+        }
+    }
+    $stmt_paiements_mois->execute();
+    $stats['paiements_mois'] = $stmt_paiements_mois->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+} catch (PDOException $e) {
+    error_log("Erreur statistiques paiements mois: " . $e->getMessage());
+    $stats['paiements_mois'] = 0;
 }
-$stmt_paiements_mois->execute();
-$stats['paiements_mois'] = $stmt_paiements_mois->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
 // Derniers paiements
-$query_paiements_recent = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, f.type_frais 
+try {
+    $query_paiements_recent = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, f.type_frais 
+                       FROM paiements p 
+                       JOIN etudiants e ON p.etudiant_id = e.id 
+                       LEFT JOIN classe c ON e.classe_id = c.id 
+                       JOIN frais f ON p.frais_id = f.id 
+                       WHERE p.statut = 'payé'";
+    if (!empty($where_conditions)) {
+        $query_paiements_recent .= " AND " . implode(" AND ", $where_conditions);
+    }
+    $query_paiements_recent .= " ORDER BY p.date_paiement DESC LIMIT 6";
+
+    $stmt_paiements_recent = $db->prepare($query_paiements_recent);
+    if (!empty($params)) {
+        foreach ($params as $key => $value) {
+            $stmt_paiements_recent->bindValue($key, $value);
+        }
+    }
+    $stmt_paiements_recent->execute();
+    $paiements = $stmt_paiements_recent->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Erreur derniers paiements: " . $e->getMessage());
+    $paiements = [];
+}
+
+// Graphique des paiements par mois (avec année scolaire)
+try {
+    $query_graph = "SELECT MONTH(p.date_paiement) as mois, SUM(p.montant_paye) as total 
                    FROM paiements p 
                    JOIN etudiants e ON p.etudiant_id = e.id 
                    LEFT JOIN classe c ON e.classe_id = c.id 
-                   JOIN frais f ON p.frais_id = f.id 
-                   WHERE p.statut = 'payé'";
-if (!empty($where_conditions)) {
-    $query_paiements_recent .= " AND " . implode(" AND ", $where_conditions);
-}
-$query_paiements_recent .= " ORDER BY p.date_paiement DESC LIMIT 6";
-
-$stmt_paiements_recent = $db->prepare($query_paiements_recent);
-if (!empty($params)) {
-    foreach ($params as $key => $value) {
-        $stmt_paiements_recent->bindValue($key, $value);
+                   WHERE YEAR(p.date_paiement) = YEAR(CURDATE()) 
+                   AND p.statut = 'payé'";
+    if (!empty($where_conditions)) {
+        $query_graph .= " AND " . implode(" AND ", $where_conditions);
     }
-}
-$stmt_paiements_recent->execute();
-$paiements = $stmt_paiements_recent->fetchAll(PDO::FETCH_ASSOC);
+    $query_graph .= " GROUP BY MONTH(p.date_paiement) ORDER BY mois";
 
-// Graphique des paiements par mois (avec année scolaire)
-$query_graph = "SELECT MONTH(p.date_paiement) as mois, SUM(p.montant_paye) as total 
-               FROM paiements p 
-               JOIN etudiants e ON p.etudiant_id = e.id 
-               LEFT JOIN classe c ON e.classe_id = c.id 
-               WHERE YEAR(p.date_paiement) = YEAR(CURDATE()) 
-               AND p.statut = 'payé'";
-if (!empty($where_conditions)) {
-    $query_graph .= " AND " . implode(" AND ", $where_conditions);
-}
-$query_graph .= " GROUP BY MONTH(p.date_paiement) ORDER BY mois";
-
-$stmt_graph = $db->prepare($query_graph);
-if (!empty($params)) {
-    foreach ($params as $key => $value) {
-        $stmt_graph->bindValue($key, $value);
+    $stmt_graph = $db->prepare($query_graph);
+    if (!empty($params)) {
+        foreach ($params as $key => $value) {
+            $stmt_graph->bindValue($key, $value);
+        }
     }
+    $stmt_graph->execute();
+    $data_graph = $stmt_graph->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Erreur graphique paiements: " . $e->getMessage());
+    $data_graph = [];
 }
-$stmt_graph->execute();
-$data_graph = $stmt_graph->fetchAll(PDO::FETCH_ASSOC);
 
 // Statistiques par classe (pour le graphique circulaire) avec année scolaire
-$query_stats_classes = "SELECT c.nom as classe_nom, COUNT(e.id) as nb_etudiants, 
-                               COALESCE(SUM(p.montant_paye), 0) as total_paiements
-                        FROM classe c 
-                        LEFT JOIN etudiants e ON c.id = e.classe_id 
-                        LEFT JOIN paiements p ON e.id = p.etudiant_id AND p.statut = 'payé'";
-if (!empty($filtre_annee_scolaire)) {
-    $query_stats_classes .= " WHERE c.annee_scolaire = :annee_scolaire";
-}
-$query_stats_classes .= " GROUP BY c.id, c.nom 
-                        ORDER BY total_paiements DESC 
-                        LIMIT 8";
+try {
+    $query_stats_classes = "SELECT c.nom as classe_nom, COUNT(e.id) as nb_etudiants, 
+                                   COALESCE(SUM(p.montant_paye), 0) as total_paiements
+                            FROM classe c 
+                            LEFT JOIN etudiants e ON c.id = e.classe_id 
+                            LEFT JOIN paiements p ON e.id = p.etudiant_id AND p.statut = 'payé'";
+    $params_classes = [];
+    if (!empty($filtre_annee_scolaire)) {
+        $query_stats_classes .= " WHERE c.annee_scolaire = :annee_scolaire";
+        $params_classes[':annee_scolaire'] = $filtre_annee_scolaire;
+    }
+    $query_stats_classes .= " GROUP BY c.id, c.nom 
+                            ORDER BY total_paiements DESC 
+                            LIMIT 8";
 
-$stmt_stats_classes = $db->prepare($query_stats_classes);
-if (!empty($filtre_annee_scolaire)) {
-    $stmt_stats_classes->bindParam(':annee_scolaire', $filtre_annee_scolaire);
+    $stmt_stats_classes = $db->prepare($query_stats_classes);
+    foreach ($params_classes as $key => $value) {
+        $stmt_stats_classes->bindValue($key, $value);
+    }
+    $stmt_stats_classes->execute();
+    $stats_classes = $stmt_stats_classes->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log("Erreur statistiques classes: " . $e->getMessage());
+    $stats_classes = [];
 }
-$stmt_stats_classes->execute();
-$stats_classes = $stmt_stats_classes->fetchAll(PDO::FETCH_ASSOC);
 
 // Récupérer le nom de la classe filtrée pour l'affichage
 $classe_filtree_nom = '';
 if (!empty($filtre_classe)) {
-    $query_classe_filtree = "SELECT nom FROM classe WHERE id = :classe_id";
-    $stmt_classe_filtree = $db->prepare($query_classe_filtree);
-    $stmt_classe_filtree->bindParam(':classe_id', $filtre_classe);
-    $stmt_classe_filtree->execute();
-    $classe_filtree = $stmt_classe_filtree->fetch(PDO::FETCH_ASSOC);
-    $classe_filtree_nom = $classe_filtree['nom'] ?? '';
+    try {
+        $query_classe_filtree = "SELECT nom FROM classe WHERE id = :classe_id";
+        $stmt_classe_filtree = $db->prepare($query_classe_filtree);
+        $stmt_classe_filtree->bindParam(':classe_id', $filtre_classe, PDO::PARAM_INT);
+        $stmt_classe_filtree->execute();
+        $classe_filtree = $stmt_classe_filtree->fetch(PDO::FETCH_ASSOC);
+        $classe_filtree_nom = htmlspecialchars($classe_filtree['nom'] ?? '');
+    } catch (PDOException $e) {
+        error_log("Erreur récupération nom classe: " . $e->getMessage());
+        $classe_filtree_nom = '';
+    }
 }
 ?>
 
@@ -204,13 +247,14 @@ include 'layout.php';
     </div>
     <div class="card-body">
         <form method="GET" class="row g-3 align-items-end">
+            <input type="hidden" name="csrf_token" value="<?php echo CSRF::generateToken(); ?>">
             <div class="col-md-3">
                 <label for="filtre_annee_scolaire" class="form-label">Année Scolaire</label>
                 <select class="form-control" id="filtre_annee_scolaire" name="annee_scolaire">
                     <?php foreach ($annees_scolaires as $annee): ?>
-                    <option value="<?php echo $annee['annee_scolaire']; ?>" 
+                    <option value="<?php echo htmlspecialchars($annee['annee_scolaire']); ?>" 
                         <?php echo ($filtre_annee_scolaire == $annee['annee_scolaire']) ? 'selected' : ''; ?>>
-                        <?php echo $annee['annee_scolaire']; ?>
+                        <?php echo htmlspecialchars($annee['annee_scolaire']); ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
@@ -230,7 +274,7 @@ include 'layout.php';
                     ?>
                     <?php foreach ($classes_filtrees as $classe): ?>
                     <option value="<?php echo $classe['id']; ?>" <?php echo ($filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
-                        <?php echo $classe['nom'] . ' - ' . $classe['niveau']; ?>
+                        <?php echo htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']); ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
@@ -247,12 +291,12 @@ include 'layout.php';
                     <?php 
                     $filtres_actifs = [];
                     if (!empty($filtre_annee_scolaire)) {
-                        $filtres_actifs[] = "Année: " . $filtre_annee_scolaire;
+                        $filtres_actifs[] = "Année: " . htmlspecialchars($filtre_annee_scolaire);
                     }
                     if (!empty($filtre_classe)) {
                         $filtres_actifs[] = "Classe: " . $classe_filtree_nom;
                     }
-                    echo implode(' | ', $filtres_actifs);
+                    echo htmlspecialchars(implode(' | ', $filtres_actifs));
                     ?>
                 </span>
                 <a href="dashboard.php" class="btn btn-sm btn-outline-secondary ms-2">
@@ -272,13 +316,13 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-primary">Élèves</h5>
-                        <h2 class="text-primary"><?php echo $stats['etudiants']; ?></h2>
+                        <h2 class="text-primary"><?php echo htmlspecialchars($stats['etudiants']); ?></h2>
                         <p class="card-text">
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Dans la classe';
                             } elseif (!empty($filtre_annee_scolaire)) {
-                                echo "Année " . $filtre_annee_scolaire;
+                                echo "Année " . htmlspecialchars($filtre_annee_scolaire);
                             } else {
                                 echo 'Total inscrits';
                             }
@@ -299,13 +343,13 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-success">Totaux</h5>
-                        <h2 class="text-success"><?php echo number_format($stats['paiements'], 0, ',', ' '); ?> Kwz</h2>
+                        <h2 class="text-success"><?php echo htmlspecialchars(number_format($stats['paiements'], 0, ',', ' ')); ?> Kwz</h2>
                         <p class="card-text">
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Collectés classe';
                             } elseif (!empty($filtre_annee_scolaire)) {
-                                echo "Année " . $filtre_annee_scolaire;
+                                echo "Année " . htmlspecialchars($filtre_annee_scolaire);
                             } else {
                                 echo 'Le Cumul';
                             }
@@ -326,7 +370,7 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-warning">Types de Frais</h5>
-                        <h2 class="text-warning"><?php echo $stats['frais']; ?></h2>
+                        <h2 class="text-warning"><?php echo htmlspecialchars($stats['frais']); ?></h2>
                         <p class="card-text">Catégories</p>
                     </div>
                     <div class="align-self-center">
@@ -343,13 +387,13 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-info">Ce Mois</h5>
-                        <h2 class="text-info"><?php echo number_format($stats['paiements_mois'], 0, ',', ' '); ?> Kwz</h2>
+                        <h2 class="text-info"><?php echo htmlspecialchars(number_format($stats['paiements_mois'], 0, ',', ' ')); ?> Kwz</h2>
                         <p class="card-text">
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Mensuels classe';
                             } elseif (!empty($filtre_annee_scolaire)) {
-                                echo "Mensuels " . $filtre_annee_scolaire;
+                                echo "Mensuels " . htmlspecialchars($filtre_annee_scolaire);
                             } else {
                                 echo 'Mensuels';
                             }
@@ -371,9 +415,9 @@ include 'layout.php';
         <div class="card">
             <div class="card-header bg-white d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">
-                    <i class="bi bi-bar-chart"></i> Paiements par Mois (<?php echo date('Y'); ?>)
+                    <i class="bi bi-bar-chart"></i> Paiements par Mois (<?php echo htmlspecialchars(date('Y')); ?>)
                     <?php if (!empty($filtre_annee_scolaire)): ?>
-                    <span class="badge bg-info ms-2"><?php echo $filtre_annee_scolaire; ?></span>
+                    <span class="badge bg-info ms-2"><?php echo htmlspecialchars($filtre_annee_scolaire); ?></span>
                     <?php endif; ?>
                 </h5>
                 <?php if (!empty($filtre_classe)): ?>
@@ -392,7 +436,7 @@ include 'layout.php';
                 <h5 class="card-title mb-0">
                     <i class="bi bi-pie-chart"></i> Répartition par Classe
                     <?php if (!empty($filtre_annee_scolaire)): ?>
-                    <span class="badge bg-info ms-2"><?php echo $filtre_annee_scolaire; ?></span>
+                    <span class="badge bg-info ms-2"><?php echo htmlspecialchars($filtre_annee_scolaire); ?></span>
                     <?php endif; ?>
                 </h5>
             </div>
@@ -416,13 +460,13 @@ include 'layout.php';
                         <?php foreach ($paiements as $paiement): ?>
                         <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1"><?php echo $paiement['nom'] . ' ' . $paiement['prenom']; ?></h6>
-                                <small class="text-success"><?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> Kwz</small>
+                                <h6 class="mb-1"><?php echo htmlspecialchars($paiement['nom'] . ' ' . $paiement['prenom']); ?></h6>
+                                <small class="text-success"><?php echo htmlspecialchars(number_format($paiement['montant_paye'], 0, ',', ' ')); ?> Kwz</small>
                             </div>
-                            <p class="mb-1 small"><?php echo $paiement['type_frais']; ?></p>
+                            <p class="mb-1 small"><?php echo htmlspecialchars($paiement['type_frais']); ?></p>
                             <div class="d-flex justify-content-between">
-                                <small class="text-muted"><?php echo date('d/m/Y', strtotime($paiement['date_paiement'])); ?></small>
-                                <small class="text-info"><?php echo $paiement['classe_nom'] ?? '-'; ?></small>
+                                <small class="text-muted"><?php echo htmlspecialchars(date('d/m/Y', strtotime($paiement['date_paiement']))); ?></small>
+                                <small class="text-info"><?php echo htmlspecialchars($paiement['classe_nom'] ?? '-'); ?></small>
                             </div>
                         </div>
                         <?php endforeach; ?>
@@ -495,7 +539,10 @@ const paiementsChart = new Chart(ctx, {
             data: [<?php
                 $monthly_data = array_fill(0, 12, 0);
                 foreach ($data_graph as $data) {
-                    $monthly_data[$data['mois'] - 1] = $data['total'];
+                    $month_index = intval($data['mois']) - 1;
+                    if ($month_index >= 0 && $month_index < 12) {
+                        $monthly_data[$month_index] = floatval($data['total']);
+                    }
                 }
                 echo implode(', ', $monthly_data);
             ?>],
@@ -524,9 +571,21 @@ const ctxClasses = document.getElementById('classesChart').getContext('2d');
 const classesChart = new Chart(ctxClasses, {
     type: 'doughnut',
     data: {
-        labels: [<?php echo implode(', ', array_map(function($c) { return "'" . addslashes($c['classe_nom']) . "'"; }, $stats_classes)); ?>],
+        labels: [<?php 
+            $labels = [];
+            foreach ($stats_classes as $c) {
+                $labels[] = "'" . addslashes(htmlspecialchars($c['classe_nom'])) . "'";
+            }
+            echo implode(', ', $labels);
+        ?>],
         datasets: [{
-            data: [<?php echo implode(', ', array_map(function($c) { return $c['total_paiements']; }, $stats_classes)); ?>],
+            data: [<?php 
+                $data = [];
+                foreach ($stats_classes as $c) {
+                    $data[] = floatval($c['total_paiements']);
+                }
+                echo implode(', ', $data);
+            ?>],
             backgroundColor: [
                 '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', 
                 '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
@@ -563,4 +622,14 @@ const classesChart = new Chart(ctxClasses, {
 document.getElementById('filtre_annee_scolaire').addEventListener('change', function() {
     // Le formulaire se soumet automatiquement
 });
+
+// Protection contre les injections XSS dans les données dynamiques
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 </script>
