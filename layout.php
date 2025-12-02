@@ -93,7 +93,7 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="dashboard.php">
-                <i class="bi bi-building"></i> C.S FRANCOPHONE LES BAMBINS SAGES
+                <img src="assets/images/logo.png" alt="Logo École" style="max-width: 30px;" class="logo">  C.S FRANCOPHONE LES BAMBINS SAGES
             </a>
             
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">

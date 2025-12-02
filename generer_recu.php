@@ -58,7 +58,7 @@ if ($paiement['classe_niveau']) {
 }
 
 // Chemins des images (à adapter selon votre structure)
-$logo_ecole = "assets/images/logo.jpg"; // Chemin vers votre logo 
+$logo_ecole = "assets/images/logo.png"; // Chemin vers votre logo 
 $filigrane_image = "assets/images/filigrane-ecole.jpg"; // Chemin vers votre image filigrane
 
 // Vérifier si les images existent, sinon utiliser des valeurs par défaut
@@ -390,14 +390,8 @@ $has_filigrane = file_exists($filigrane_image);
     <div class="receipt-container">
         <!-- En-tête avec logo -->
         <div class="header">
-            <div class="logo-container">
-                <?php if ($has_logo): ?>
-                    <img src="<?php echo $logo_ecole; ?>" alt="Logo École" class="logo">
-                <?php else: ?>
-                    <div style="height: 80px; display: flex; align-items: center; justify-content: center;">
-                        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">LOGO ÉCOLE</div>
-                    </div>
-                <?php endif; ?>
+            <div class="logo-container"> 
+                <img src="assets/images/logo.png" alt="Logo École" class="logo">
             </div>
             
             <div class="school-name">COMPLEXE SCOLAIRE PRIVÉ FRANCOPHONE LES BAMBINS SAGES</div>
