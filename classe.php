@@ -21,9 +21,11 @@ if ($_POST && isset($_POST['ajouter_classe'])) {
         $annee_scolaire = $_POST['annee_scolaire'];
         
         // Vérifier si la classe existe déjà
-        $query_check = "SELECT id FROM classe WHERE nom = :nom AND annee_scolaire = :annee_scolaire";
+        $query_check = "SELECT id FROM classe WHERE nom = :nom AND niveau = :niveau AND filiere = :filiere AND annee_scolaire = :annee_scolaire";
         $stmt_check = $db->prepare($query_check);
         $stmt_check->bindParam(':nom', $nom);
+        $stmt_check->bindParam(':niveau', $niveau);
+        $stmt_check->bindParam(':filiere', $filiere);
         $stmt_check->bindParam(':annee_scolaire', $annee_scolaire);
         $stmt_check->execute();
         

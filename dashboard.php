@@ -342,7 +342,7 @@ include 'layout.php';
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
-                        <h5 class="card-title text-success">Totaux</h5>
+                        <h5 class="card-title text-success">Paiements</h5>
                         <h2 class="text-success"><?php echo htmlspecialchars(number_format($stats['paiements'], 0, ',', ' ')); ?> Kwz</h2>
                         <p class="card-text">
                             <?php 
@@ -497,7 +497,7 @@ include 'layout.php';
                     <div class="col-md-3">
                         <a href="etudiants.php" class="btn btn-outline-primary w-100">
                             <i class="bi bi-person-plus"></i><br>
-                            Nouvel Étudiant
+                            Nouvel Élève
                         </a>
                     </div>
                     <div class="col-md-3">

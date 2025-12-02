@@ -40,14 +40,14 @@ class Auth {
     
     public static function checkAuth() {
         if (!isset($_SESSION['logged_in']) || !$_SESSION['logged_in']) {
-            header('Location: login.php');
+            header('Location: index.php');
             exit;
         }
         
         // Vérification d'inactivité (30 minutes)
         if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > 1800)) {
             self::logout();
-            header('Location: login.php?timeout=1');
+            header('Location: index.php?timeout=1');
             exit;
         }
         

@@ -511,7 +511,7 @@ include 'layout.php';
                         <div class="col-md-6">
                             <label for="telephone" class="form-label">Téléphone</label>
                             <input type="text" class="form-control" id="telephone" name="telephone" 
-                                   placeholder="+243 XX XXX XX XX" maxlength="20"
+                                   placeholder="+244 XX XXX XX XX" maxlength="20"
                                    value="<?php echo isset($_POST['telephone']) ? htmlspecialchars($_POST['telephone']) : ''; ?>">
                         </div>
                         <div class="col-md-6">

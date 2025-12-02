@@ -188,13 +188,13 @@ function updateLastLogin($db, $user_id) {
 
                     <!-- Aide pour le test -->
                     <div class="text-center security-info">
-                        <p class="text-muted small">
+                        <p class="text-warning small">
                             <i class="bi bi-shield-check"></i> Votre connexion est sécurisée
                         </p>
                         <?php if (empty($error)): ?>
-                        <p class="text-muted small mt-2">
+                        <!-- <p class="text-muted small mt-2">
                             <strong>Test:</strong> admin / password
-                        </p>
+                        </p> -->
                         <?php endif; ?>
                     </div>
                 </div>

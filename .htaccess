@@ -18,5 +18,5 @@ Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains
 # Protection contre le hotlinking
 RewriteEngine On
 RewriteCond %{HTTP_REFERER} !^$
-RewriteCond %{HTTP_REFERER} !^https?://(www\.)?votredomaine\.ecole [NC]
+RewriteCond %{HTTP_REFERER} !^https?://(www\.)?bambinssages.com\.ecole [NC]
 RewriteRule \.(jpg|jpeg|png|gif)$ - [F]

@@ -79,12 +79,41 @@ if ($_POST && isset($_POST['enregistrer_paiement'])) {
             
             try {
                 // 1. Enregistrer le paiement
-                $query_paiement = "INSERT INTO paiements (etudiant_id, frais_id, montant_paye, date_paiement, mode_paiement, reference, statut) 
-                                  VALUES (:etudiant_id, :frais_id, :montant_paye, :date_paiement, :mode_paiement, :reference, :statut)";
+                // $query_paiement = "INSERT INTO paiements (etudiant_id, frais_id, montant_paye, date_paiement, mode_paiement, reference, statut) 
+                //                   VALUES (:etudiant_id, :frais_id, :montant_paye, :date_paiement, :mode_paiement, :reference, :statut)";
+                // $stmt_paiement = $db->prepare($query_paiement);
+                // $stmt_paiement->bindParam(':etudiant_id', $etudiant_id);
+                // $stmt_paiement->bindParam(':frais_id', $frais_id);
+                // $stmt_paiement->bindParam(':montant_paye', $montant_paye);
+                // $stmt_paiement->bindParam(':date_paiement', $date_paiement);
+                // $stmt_paiement->bindParam(':mode_paiement', $mode_paiement);
+                // $stmt_paiement->bindParam(':reference', $reference);
+                // $stmt_paiement->bindParam(':statut', $statut);
+                // $stmt_paiement->execute();
+
+                // Changer le nom de la colonne pour clarifier
+                $query_paiement = "INSERT INTO paiements (etudiant_id, frais_id, montant_paye, montant_total_paye, date_paiement, mode_paiement, reference, statut) 
+                                VALUES (:etudiant_id, :frais_id, :montant_paye, :montant_total_paye, :date_paiement, :mode_paiement, :reference, :statut)";
+
+                // Récupérer le total actuel
+                $query_total = "SELECT SUM(montant_paye) as total_paye FROM paiements WHERE etudiant_id = :etudiant_id AND frais_id = :frais_id";
+                $stmt_total = $db->prepare($query_total);
+                $stmt_total->bindParam(':etudiant_id', $etudiant_id);
+                $stmt_total->bindParam(':frais_id', $frais_id);
+                $stmt_total->execute();
+
+                $total_actuel = 0;
+                if ($row = $stmt_total->fetch(PDO::FETCH_ASSOC)) {
+                    $total_actuel = $row['total_paye'] ?? 0;
+                }
+
+                $montant_total_paye = $total_actuel + $montant_paye;
+
                 $stmt_paiement = $db->prepare($query_paiement);
                 $stmt_paiement->bindParam(':etudiant_id', $etudiant_id);
                 $stmt_paiement->bindParam(':frais_id', $frais_id);
-                $stmt_paiement->bindParam(':montant_paye', $montant_paye);
+                $stmt_paiement->bindParam(':montant_paye', $montant_paye); // Montant de ce paiement spécifique
+                $stmt_paiement->bindParam(':montant_total_paye', $montant_total_paye); // Total cumulé
                 $stmt_paiement->bindParam(':date_paiement', $date_paiement);
                 $stmt_paiement->bindParam(':mode_paiement', $mode_paiement);
                 $stmt_paiement->bindParam(':reference', $reference);
@@ -429,7 +458,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestion des Paiements</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/bootstrap-5.1.3-dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
 </head>
@@ -722,7 +751,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                 </thead>
                                 <tbody>
                                     <?php foreach ($paiements as $paiement): 
-                                        $solde = $paiement['montant_attendu'] - $paiement['montant_paye'];
+                                        $solde = $paiement['montant_attendu'] - $paiement['montant_total_paye'];
                                     ?>
                                     <tr>
                                         <td>
@@ -792,13 +821,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                                 class="btn btn-success" data-bs-toggle="tooltip" title="Marquer comme payé">
                                                     <i class="bi bi-check-circle"></i>
                                                 </a>
-                                                <?php endif; ?>
-                                                <?php if ($paiement['statut'] == 'payé'): ?>
-                                                <a href="?<?php echo http_build_query(array_merge($_GET, ['changer_statut' => $paiement['id'], 'statut' => 'annulé'])); ?>" 
-                                                class="btn btn-danger" data-bs-toggle="tooltip" title="Annuler le paiement">
-                                                    <i class="bi bi-x-circle"></i>
-                                                </a>
-                                                <?php endif; ?>
+                                                <?php endif; ?> 
                                                 <button class="btn btn-info" data-bs-toggle="tooltip" title="Imprimer le reçu"
                                                         onclick="genererRecu(<?php echo $paiement['id']; ?>)">
                                                     <i class="bi bi-receipt"></i>
@@ -977,7 +1000,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="assets/bootstrap-5.1.3-dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const niveauSelect = document.getElementById('niveau_id');
