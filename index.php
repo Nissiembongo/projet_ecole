@@ -96,6 +96,9 @@ function updateLastLogin($db, $user_id) {
             display: flex;
             align-items: center;
         }
+        .logo-container {
+            margin-bottom: 8px;
+        }
         .login-card {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
@@ -129,6 +132,9 @@ function updateLastLogin($db, $user_id) {
         .security-info {
             font-size: 0.875rem;
         }
+         .logo {
+                max-width: 70px;
+            }
     </style>
 </head>
 <body>
@@ -137,7 +143,10 @@ function updateLastLogin($db, $user_id) {
             <div class="col-md-5">
                 <div class="login-card p-5">
                     <div class="text-center mb-4">
-                        <i class="bi bi-building display-1 text-primary"></i>
+                        <!-- <i class="bi bi-building display-1 text-primary"></i> -->
+                        <div class="logo-container"> 
+                            <img src="assets/images/logo.png" alt="Logo École" class="logo"> 
+                        </div> 
                         <h2 class="mt-3 fw-bold">Connexion</h2>
                         <p class="text-muted">C.S FRANCOPHONE LES BAMBINS SAGES</p>
                     </div>

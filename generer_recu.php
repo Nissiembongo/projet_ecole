@@ -58,7 +58,7 @@ if ($paiement['classe_niveau']) {
 }
 
 // Chemins des images (à adapter selon votre structure)
-$logo_ecole = "assets/images/logo-ecole.jpg"; // Chemin vers votre logo 
+$logo_ecole = "assets/images/logo.jpg"; // Chemin vers votre logo 
 $filigrane_image = "assets/images/filigrane-ecole.jpg"; // Chemin vers votre image filigrane
 
 // Vérifier si les images existent, sinon utiliser des valeurs par défaut
