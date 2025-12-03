@@ -10,8 +10,8 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || !$_SESSION
 $database = new Database();
 $db = $database->getConnection();
 
-// Récupérer la liste des classes
-$query_classes = "SELECT * FROM classe ORDER BY niveau, nom";
+// Récupérer la liste des classes avec filière
+$query_classes = "SELECT id, nom, niveau, filiere FROM classe ORDER BY niveau, nom";
 $stmt_classes = $db->prepare($query_classes);
 $stmt_classes->execute();
 $classes = $stmt_classes->fetchAll(PDO::FETCH_ASSOC);
@@ -99,7 +99,14 @@ include 'layout.php';
                     foreach ($classes_filtrees as $classe): 
                     ?>
                     <option value="<?php echo $classe['id']; ?>" <?php echo (($_GET['rapport_classe'] ?? '') == $classe['id']) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']); ?>
+                        <?php 
+                        // Afficher nom, niveau et filière
+                        $texte_classe = htmlspecialchars($classe['nom']) . ' - ' . htmlspecialchars($classe['niveau']);
+                        if (!empty($classe['filiere'])) {
+                            $texte_classe .= ' (' . htmlspecialchars($classe['filiere']) . ')';
+                        }
+                        echo $texte_classe;
+                        ?>
                     </option>
                     <?php endforeach; ?>
                 </select>
@@ -108,10 +115,10 @@ include 'layout.php';
             <div class="col-md-3">
                 <label for="rapport_type" class="form-label">Type de Rapport</label>
                 <select class="form-control" id="rapport_type" name="rapport_type">
-                    <option value="tous" <?php echo (($_GET['rapport_type'] ?? '') == 'tous') ? 'selected' : ''; ?>>Tous les étudiants</option>
-                    <option value="payes" <?php echo (($_GET['rapport_type'] ?? '') == 'payes') ? 'selected' : ''; ?>>Étudiants ayant payé</option>
-                    <option value="non_payes" <?php echo (($_GET['rapport_type'] ?? '') == 'non_payes') ? 'selected' : ''; ?>>Étudiants non soldés</option>
-                    <option value="detail" <?php echo (($_GET['rapport_type'] ?? '') == 'detail') ? 'selected' : ''; ?>>Détail par étudiant</option>
+                    <option value="tous" <?php echo (($_GET['rapport_type'] ?? '') == 'tous') ? 'selected' : ''; ?>>Tous les élèves</option>
+                    <option value="payes" <?php echo (($_GET['rapport_type'] ?? '') == 'payes') ? 'selected' : ''; ?>>Elèves ayant payé</option>
+                    <option value="non_payes" <?php echo (($_GET['rapport_type'] ?? '') == 'non_payes') ? 'selected' : ''; ?>>Elèves non soldés</option>
+                    <option value="detail" <?php echo (($_GET['rapport_type'] ?? '') == 'detail') ? 'selected' : ''; ?>>Détail par élève</option>
                 </select>
             </div>
             
@@ -247,7 +254,7 @@ include 'layout.php';
                             // Étudiants ayant payé (au moins un paiement)
                             $query_rapport = "SELECT 
                                 e.id, e.matricule, e.nom, e.prenom, 
-                                c.nom as classe_nom, c.niveau as classe_niveau,
+                                c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
                                 COUNT(p.id) as nombre_paiements,
                                 SUM(p.montant_paye) as total_paye,
                                 GROUP_CONCAT(DISTINCT f.type_frais SEPARATOR ', ') as types_frais_payes
@@ -267,7 +274,7 @@ include 'layout.php';
                                 // Tous les frais - étudiants n'ayant jamais payé du tout
                                 $query_rapport = "SELECT 
                                     e.id, e.matricule, e.nom, e.prenom, 
-                                    c.nom as classe_nom, c.niveau as classe_niveau,
+                                    c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
                                     'Aucun paiement' as statut_paiement
                                 FROM etudiants e
                                 LEFT JOIN classe c ON e.classe_id = c.id
@@ -284,7 +291,7 @@ include 'layout.php';
                                 // Frais spécifique - étudiants n'ayant pas payé ce frais
                                 $query_rapport = "SELECT 
                                     e.id, e.matricule, e.nom, e.prenom, 
-                                    c.nom as classe_nom, c.niveau as classe_niveau,
+                                    c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
                                     CONCAT('N\\'a pas payé: ', (SELECT type_frais FROM frais WHERE id = :frais_id)) as statut_paiement
                                 FROM etudiants e
                                 LEFT JOIN classe c ON e.classe_id = c.id
@@ -307,7 +314,7 @@ include 'layout.php';
                             // Détail complet par étudiant
                             $query_rapport = "SELECT 
                                 e.id, e.matricule, e.nom, e.prenom, 
-                                c.nom as classe_nom, c.niveau as classe_niveau,
+                                c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
                                 f.type_frais, f.montant as montant_attendu,
                                 COALESCE(SUM(p.montant_paye), 0) as montant_paye,
                                 (f.montant - COALESCE(SUM(p.montant_paye), 0)) as solde_restant,
@@ -330,7 +337,7 @@ include 'layout.php';
                             // Tous les étudiants avec résumé
                             $query_rapport = "SELECT 
                                 e.id, e.matricule, e.nom, e.prenom, 
-                                c.nom as classe_nom, c.niveau as classe_niveau,
+                                c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
                                 COUNT(p.id) as nombre_paiements,
                                 COALESCE(SUM(p.montant_paye), 0) as total_paye,
                                 CASE 
@@ -374,6 +381,9 @@ include 'layout.php';
                             foreach ($classes as $classe) {
                                 if ($classe['id'] == $rapport_classe) {
                                     $classe_nom = htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']);
+                                    if (!empty($classe['filiere'])) {
+                                        $classe_nom .= ' (' . htmlspecialchars($classe['filiere']) . ')';
+                                    }
                                     break;
                                 }
                             }
@@ -401,9 +411,9 @@ include 'layout.php';
                         }
                         
                         $types_rapport = [
-                            'tous' => 'Tous les étudiants',
-                            'payes' => 'Étudiants ayant payé',
-                            'non_payes' => 'Étudiants non soldés',
+                            'tous' => 'Tous les élèves',
+                            'payes' => 'Élèves ayant payé',
+                            'non_payes' => 'Élèves non soldés',
                             'detail' => 'Détail par étudiant'
                         ];
                         $filtres_appliques[] = "Type: " . ($types_rapport[$rapport_type] ?? $rapport_type);
@@ -472,10 +482,13 @@ include 'layout.php';
                                     echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
                                     echo '<td>';
                                     echo '<div>';
-                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
-                                    if (!empty($ligne['classe_niveau'])) {
-                                        echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span><br>';
+                                    echo '<small class="text-muted">';
+                                    echo 'Niveau: ' . htmlspecialchars($ligne['classe_niveau'] ?? '-');
+                                    if (!empty($ligne['filiere'])) {
+                                        echo ' | Filière: ' . htmlspecialchars($ligne['filiere']);
                                     }
+                                    echo '</small>';
                                     echo '</div>';
                                     echo '</td>';
                                     echo '<td class="text-center">' . htmlspecialchars($ligne['nombre_paiements']) . '</td>';
@@ -489,10 +502,13 @@ include 'layout.php';
                                     echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
                                     echo '<td>';
                                     echo '<div>';
-                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
-                                    if (!empty($ligne['classe_niveau'])) {
-                                        echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span><br>';
+                                    echo '<small class="text-muted">';
+                                    echo 'Niveau: ' . htmlspecialchars($ligne['classe_niveau'] ?? '-');
+                                    if (!empty($ligne['filiere'])) {
+                                        echo ' | Filière: ' . htmlspecialchars($ligne['filiere']);
                                     }
+                                    echo '</small>';
                                     echo '</div>';
                                     echo '</td>';
                                     echo '<td><span class="badge bg-danger">' . htmlspecialchars($ligne['statut_paiement']) . '</span></td>';
@@ -503,10 +519,13 @@ include 'layout.php';
                                     echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
                                     echo '<td>';
                                     echo '<div>';
-                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
-                                    if (!empty($ligne['classe_niveau'])) {
-                                        echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span><br>';
+                                    echo '<small class="text-muted">';
+                                    echo 'Niveau: ' . htmlspecialchars($ligne['classe_niveau'] ?? '-');
+                                    if (!empty($ligne['filiere'])) {
+                                        echo ' | Filière: ' . htmlspecialchars($ligne['filiere']);
                                     }
+                                    echo '</small>';
                                     echo '</div>';
                                     echo '</td>';
                                     echo '<td>' . htmlspecialchars($ligne['type_frais']) . '</td>';
@@ -527,10 +546,13 @@ include 'layout.php';
                                     echo '<td>' . htmlspecialchars($ligne['nom'] . ' ' . $ligne['prenom']) . '</td>';
                                     echo '<td>';
                                     echo '<div>';
-                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span>';
-                                    if (!empty($ligne['classe_niveau'])) {
-                                        echo '<br><small class="text-muted">Niveau: ' . htmlspecialchars($ligne['classe_niveau']) . '</small>';
+                                    echo '<span class="badge bg-secondary">' . htmlspecialchars($ligne['classe_nom'] ?? 'Non assigné') . '</span><br>';
+                                    echo '<small class="text-muted">';
+                                    echo 'Niveau: ' . htmlspecialchars($ligne['classe_niveau'] ?? '-');
+                                    if (!empty($ligne['filiere'])) {
+                                        echo ' | Filière: ' . htmlspecialchars($ligne['filiere']);
                                     }
+                                    echo '</small>';
                                     echo '</div>';
                                     echo '</td>';
                                     echo '<td class="text-center">' . htmlspecialchars($ligne['nombre_paiements']) . '</td>';

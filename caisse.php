@@ -1,7 +1,8 @@
 <?php
 include 'config.php';
 
-if (!isset($_SESSION['user_id'])) {
+// Vérification de l'authentification
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || !$_SESSION['logged_in']) {
     header("Location: index.php");
     exit();
 }

@@ -27,8 +27,8 @@ function mettreAJourSoldeJour($db, $date_solde = null) {
     $stmt->execute();
 }
 
-// Récupérer la liste des classes
-$query_classes = "SELECT * FROM classe ORDER BY niveau, nom";
+// Récupérer la liste des classes avec filière
+$query_classes = "SELECT id, nom, niveau, filiere FROM classe ORDER BY niveau, nom";
 $stmt_classes = $db->prepare($query_classes);
 $stmt_classes->execute();
 $classes = $stmt_classes->fetchAll(PDO::FETCH_ASSOC);
@@ -79,19 +79,6 @@ if ($_POST && isset($_POST['enregistrer_paiement'])) {
             
             try {
                 // 1. Enregistrer le paiement
-                // $query_paiement = "INSERT INTO paiements (etudiant_id, frais_id, montant_paye, date_paiement, mode_paiement, reference, statut) 
-                //                   VALUES (:etudiant_id, :frais_id, :montant_paye, :date_paiement, :mode_paiement, :reference, :statut)";
-                // $stmt_paiement = $db->prepare($query_paiement);
-                // $stmt_paiement->bindParam(':etudiant_id', $etudiant_id);
-                // $stmt_paiement->bindParam(':frais_id', $frais_id);
-                // $stmt_paiement->bindParam(':montant_paye', $montant_paye);
-                // $stmt_paiement->bindParam(':date_paiement', $date_paiement);
-                // $stmt_paiement->bindParam(':mode_paiement', $mode_paiement);
-                // $stmt_paiement->bindParam(':reference', $reference);
-                // $stmt_paiement->bindParam(':statut', $statut);
-                // $stmt_paiement->execute();
-
-                // Changer le nom de la colonne pour clarifier
                 $query_paiement = "INSERT INTO paiements (etudiant_id, frais_id, montant_paye, montant_total_paye, date_paiement, mode_paiement, reference, statut) 
                                 VALUES (:etudiant_id, :frais_id, :montant_paye, :montant_total_paye, :date_paiement, :mode_paiement, :reference, :statut)";
 
@@ -112,8 +99,8 @@ if ($_POST && isset($_POST['enregistrer_paiement'])) {
                 $stmt_paiement = $db->prepare($query_paiement);
                 $stmt_paiement->bindParam(':etudiant_id', $etudiant_id);
                 $stmt_paiement->bindParam(':frais_id', $frais_id);
-                $stmt_paiement->bindParam(':montant_paye', $montant_paye); // Montant de ce paiement spécifique
-                $stmt_paiement->bindParam(':montant_total_paye', $montant_total_paye); // Total cumulé
+                $stmt_paiement->bindParam(':montant_paye', $montant_paye);
+                $stmt_paiement->bindParam(':montant_total_paye', $montant_total_paye);
                 $stmt_paiement->bindParam(':date_paiement', $date_paiement);
                 $stmt_paiement->bindParam(':mode_paiement', $mode_paiement);
                 $stmt_paiement->bindParam(':reference', $reference);
@@ -124,7 +111,7 @@ if ($_POST && isset($_POST['enregistrer_paiement'])) {
                 
                 // 2. Enregistrer automatiquement en caisse
                 // Récupérer les infos de l'étudiant et du frais pour la description
-                $query_info = "SELECT e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.niveau as classe_niveau, f.type_frais 
+                $query_info = "SELECT e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.niveau as classe_niveau, c.filiere, f.type_frais 
                               FROM etudiants e 
                               LEFT JOIN classe c ON e.classe_id = c.id 
                               JOIN frais f ON f.id = :frais_id 
@@ -135,7 +122,11 @@ if ($_POST && isset($_POST['enregistrer_paiement'])) {
                 $stmt_info->execute();
                 $info = $stmt_info->fetch(PDO::FETCH_ASSOC);
                 
-                $description = "Paiement " . $info['type_frais'] . " - " . $info['nom'] . " " . $info['prenom'] . " (" . $info['matricule'] . ") - " . $info['classe_nom'] . " (Niv. " . $info['classe_niveau'] . ")";
+                $description = "Paiement " . $info['type_frais'] . " - " . $info['nom'] . " " . $info['prenom'] . " (" . $info['matricule'] . ") - " . $info['classe_nom'] . " (Niv. " . $info['classe_niveau'];
+                if (!empty($info['filiere'])) {
+                    $description .= " - Filière: " . $info['filiere'];
+                }
+                $description .= ")";
                 
                 // Déterminer la catégorie en fonction du type de frais
                 $categorie = 'scolarité'; // Catégorie par défaut
@@ -198,7 +189,7 @@ if (isset($_GET['changer_statut'])) {
         $db->beginTransaction();
         
         // Récupérer les infos du paiement
-        $query_info_paiement = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.niveau as classe_niveau, f.type_frais 
+        $query_info_paiement = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.niveau as classe_niveau, c.filiere, f.type_frais 
                                FROM paiements p 
                                JOIN etudiants e ON p.etudiant_id = e.id 
                                LEFT JOIN classe c ON e.classe_id = c.id 
@@ -211,7 +202,11 @@ if (isset($_GET['changer_statut'])) {
         
         if ($nouveau_statut == 'payé' && $paiement_info['statut'] != 'payé') {
             // Si on passe à "payé", créer l'opération de caisse
-            $description = "Paiement " . $paiement_info['type_frais'] . " - " . $paiement_info['nom'] . " " . $paiement_info['prenom'] . " (" . $paiement_info['matricule'] . ") - " . $paiement_info['classe_nom'] . " (Niv. " . $paiement_info['classe_niveau'] . ")";
+            $description = "Paiement " . $paiement_info['type_frais'] . " - " . $paiement_info['nom'] . " " . $paiement_info['prenom'] . " (" . $paiement_info['matricule'] . ") - " . $paiement_info['classe_nom'] . " (Niv. " . $paiement_info['classe_niveau'];
+            if (!empty($paiement_info['filiere'])) {
+                $description .= " - Filière: " . $paiement_info['filiere'];
+            }
+            $description .= ")";
             
             // Déterminer la catégorie en fonction du type de frais
             $categorie = 'scolarité'; // Catégorie par défaut
@@ -360,7 +355,7 @@ if ($page > $total_pages && $total_pages > 0) $page = $total_pages;
 
 // Requête pour les données paginées
 $query_paiements = "SELECT p.*, e.nom, e.prenom, e.matricule, e.classe_id,
-                           c.nom as classe_nom, c.niveau as classe_niveau,
+                           c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
                            f.type_frais, f.montant as montant_attendu,
                            ca.id as caisse_id, ca.categorie as caisse_categorie
                    FROM paiements p 
@@ -528,7 +523,13 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                     <option value="">Toutes les classes</option>
                                     <?php foreach ($classes_filtrees as $classe): ?>
                                     <option value="<?php echo $classe['id']; ?>" <?php echo ($filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
-                                        <?php echo $classe['nom'] . ' - Niv. ' . $classe['niveau']; ?>
+                                        <?php 
+                                        $texte_classe = htmlspecialchars($classe['nom']) . ' - Niv. ' . htmlspecialchars($classe['niveau']);
+                                        if (!empty($classe['filiere'])) {
+                                            $texte_classe .= ' (' . htmlspecialchars($classe['filiere']) . ')';
+                                        }
+                                        echo $texte_classe;
+                                        ?>
                                     </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -589,16 +590,22 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                             <?php if (!empty($filtre_classe)): 
                                 $classe_nom = '';
                                 $classe_niveau = '';
+                                $classe_filiere = '';
                                 foreach ($classes as $classe) {
                                     if ($classe['id'] == $filtre_classe) {
                                         $classe_nom = $classe['nom'];
                                         $classe_niveau = $classe['niveau'];
+                                        $classe_filiere = $classe['filiere'] ?? '';
                                         break;
                                     }
                                 }
                             ?>
                             <span class="badge bg-secondary">
-                                Classe: <?php echo $classe_nom . ' (Niv. ' . $classe_niveau . ')'; ?>
+                                Classe: <?php echo $classe_nom . ' (Niv. ' . $classe_niveau; 
+                                if (!empty($classe_filiere)) {
+                                    echo ' - ' . $classe_filiere;
+                                }
+                                echo ')'; ?>
                                 <a href="?<?php echo http_build_query(array_diff_key($_GET, ['classe' => ''])); ?>" class="text-white ms-1">
                                     <i class="bi bi-x"></i>
                                 </a>
@@ -741,6 +748,7 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                         <th>Date</th>
                                         <th>Élève</th>
                                         <th>Classe</th>
+                                        <th>Filière</th>
                                         <th>Type de Frais</th>
                                         <th>Montant</th>
                                         <th>Mode</th>
@@ -768,12 +776,14 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                                 <span class="badge bg-secondary">
                                                     <?php echo htmlspecialchars($paiement['classe_nom'] ?? 'Non assigné'); ?>
                                                 </span>
-                                                <?php if (!empty($paiement['classe_niveau'])): ?>
                                                 <br>
-                                                <small class="text-muted">Niveau: <?php echo htmlspecialchars($paiement['classe_niveau']); ?></small>
-                                                <?php endif; ?>
+                                                <small class="text-muted">
+                                                    Niveau: <?php echo htmlspecialchars($paiement['classe_niveau'] ?? '-'); ?> 
+                                                </small>
                                             </div>
                                         </td>
+                                        <td>  
+                                            <?php echo htmlspecialchars($paiement['filiere']); ?> 
                                         <td><?php echo htmlspecialchars($paiement['type_frais']); ?></td>
                                         <td>
                                             <span class="badge bg-success fs-6">
@@ -904,248 +914,448 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
         </div>
     </div>
 
-    <!-- Modal Ajouter Paiement -->
-    <div class="modal fade" id="ajouterPaiementModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title"><i class="bi bi-cash"></i> Enregistrer un paiement</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <form method="POST" id="form-paiement">
-                    <div class="modal-body">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="niveau_id" class="form-label">Niveau</label>
-                                    <select class="form-control" id="niveau_id" name="niveau_id" required>
-                                        <option value="">Sélectionner un niveau</option>
-                                        <?php foreach ($niveaux as $niveau): ?>
-                                            <option value="<?php echo $niveau; ?>">
-                                                Niveau <?php echo $niveau; ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
+   <!-- Modal Ajouter Paiement -->
+<div class="modal fade" id="ajouterPaiementModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-cash"></i> Enregistrer un paiement</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="form-paiement">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="niveau_id" class="form-label">Niveau</label>
+                                <select class="form-control" id="niveau_id" name="niveau_id" required>
+                                    <option value="">Sélectionner un niveau</option>
+                                    <?php foreach ($niveaux as $niveau): ?>
+                                        <option value="<?php echo $niveau; ?>">
+                                            Niveau <?php echo $niveau; ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
 
-                                <div class="mb-3">
-                                    <label for="classe_id" class="form-label">Classe</label>
-                                    <select class="form-control" id="classe_id" name="classe_id" required disabled>
-                                        <option value="">Sélectionner d'abord un niveau</option>
-                                    </select>
-                                    <div class="form-text">Veuillez d'abord sélectionner un niveau</div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label for="etudiant_id" class="form-label">Élève</label>
-                                    <select class="form-control" id="etudiant_id" name="etudiant_id" required disabled>
-                                        <option value="">Sélectionner d'abord une classe</option>
-                                    </select>
-                                    <div class="form-text">Veuillez d'abord sélectionner une classe</div>
-                                </div>
-                                 <div class="mb-3">
-                                    <label for="mode_paiement" class="form-label">Mode de paiement</label>
-                                    <select class="form-control" id="mode_paiement" name="mode_paiement" required>
-                                        <option value="espèces">Espèces</option>
-                                        <option value="chèque">Chèque</option>
-                                        <option value="virement">Virement</option>
-                                        <option value="carte">Carte bancaire</option>
-                                    </select>
+                            <div class="mb-3">
+                                <label for="classe_id" class="form-label">Classe</label>
+                                <select class="form-control" id="classe_id" name="classe_id" required disabled>
+                                    <option value="">Sélectionner d'abord un niveau</option>
+                                </select>
+                                <div class="form-text">
+                                    <span id="classe-info-text">Veuillez d'abord sélectionner un niveau</span>
                                 </div>
                             </div>
 
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="frais_id" class="form-label">Type de frais</label>
-                                    <select class="form-control" id="frais_id" name="frais_id" required>
-                                        <option value="">Sélectionner le type de frais</option>
-                                        <?php foreach ($frais_list as $f): ?>
-                                            <option value="<?php echo $f['id']; ?>" data-montant="<?php echo $f['montant']; ?>">
-                                                <?php echo $f['type_frais'] . ' - ' . number_format($f['montant'], 2, ',', ' ') . ' Kwz'; ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                            <div class="mb-3">
+                                <label for="etudiant_id" class="form-label">Élève</label>
+                                <select class="form-control" id="etudiant_id" name="etudiant_id" required disabled>
+                                    <option value="">Sélectionner d'abord une classe</option>
+                                </select>
+                                <div class="form-text">
+                                    <span id="etudiant-info-text">Veuillez d'abord sélectionner une classe</span>
                                 </div>
+                            </div>
+                             <div class="mb-3">
+                                <label for="mode_paiement" class="form-label">Mode de paiement</label>
+                                <select class="form-control" id="mode_paiement" name="mode_paiement" required>
+                                    <option value="espèces">Espèces</option>
+                                    <option value="chèque">Chèque</option>
+                                    <option value="virement">Virement</option>
+                                    <option value="carte">Carte bancaire</option>
+                                </select>
+                            </div>
+                        </div>
 
-                                <div class="mb-3">
-                                    <label for="montant_paye" class="form-label">Montant payé</label>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="frais_id" class="form-label">Type de frais</label>
+                                <select class="form-control" id="frais_id" name="frais_id" required>
+                                    <option value="">Sélectionner le type de frais</option>
+                                    <?php foreach ($frais_list as $f): ?>
+                                        <option value="<?php echo $f['id']; ?>" data-montant="<?php echo $f['montant']; ?>">
+                                            <?php echo $f['type_frais'] . ' - ' . number_format($f['montant'], 2, ',', ' ') . ' Kwz'; ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="montant_paye" class="form-label">Montant payé</label>
+                                <div class="input-group">
                                     <input type="number" class="form-control" id="montant_paye" name="montant_paye" step="0.01" required>
-                                    <div class="form-text">
-                                        Montant attendu: <span id="montant-attendu">0</span> Kwz
-                                    </div>
+                                    <span class="input-group-text">Kwz</span>
                                 </div>
+                                <div class="form-text">
+                                    Montant attendu: <span id="montant-attendu">0</span> Kwz
+                                    | Solde restant: <span id="solde-restant">0</span> Kwz
+                                </div>
+                            </div>
 
-                                <div class="mb-3">
-                                    <label for="date_paiement" class="form-label">Date de paiement</label>
-                                    <input type="date" class="form-control" id="date_paiement" 
-                                           name="date_paiement" value="<?php echo date('Y-m-d'); ?>" required>
-                                </div> 
-                                <br/>
-                                <div class="mb-4">
-                                    <label for="reference" class="form-label">Référence</label>
-                                    <input type="text" class="form-control" id="reference" 
-                                           name="reference" placeholder="Numéro de chèque, référence virement, etc.">
+                            <div class="mb-3">
+                                <label for="date_paiement" class="form-label">Date de paiement</label>
+                                <input type="date" class="form-control" id="date_paiement" 
+                                       name="date_paiement" value="<?php echo date('Y-m-d'); ?>" required>
+                            </div> 
+                            <br/>
+                            <div class="mb-4">
+                                <label for="reference" class="form-label">Référence</label>
+                                <input type="text" class="form-control" id="reference" 
+                                       name="reference" placeholder="Numéro de chèque, référence virement, etc.">
+                            </div>
+                            
+                            <!-- Informations supplémentaires -->
+                            <div class="card bg-light mt-3">
+                                <div class="card-body p-3">
+                                    <small class="text-muted">
+                                        <i class="bi bi-info-circle"></i> 
+                                        <strong>Informations :</strong>
+                                        <div id="infos-supplementaires">
+                                            Sélectionnez un élève pour voir les détails
+                                        </div>
+                                    </small>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                        <button type="submit" name="enregistrer_paiement" class="btn btn-primary">
-                            <i class="bi bi-save"></i> Enregistrer le paiement
-                        </button>
-                    </div>
-                </form>
-            </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" name="enregistrer_paiement" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Enregistrer le paiement
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
+</div>
 
     <script src="assets/bootstrap-5.1.3-dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const niveauSelect = document.getElementById('niveau_id');
-            const classeSelect = document.getElementById('classe_id');
-            const etudiantSelect = document.getElementById('etudiant_id');
-            const fraisSelect = document.getElementById('frais_id');
-            const montantPayeInput = document.getElementById('montant_paye');
-            const montantAttenduSpan = document.getElementById('montant-attendu');
+    document.addEventListener('DOMContentLoaded', function() {
+        const niveauSelect = document.getElementById('niveau_id');
+        const classeSelect = document.getElementById('classe_id');
+        const etudiantSelect = document.getElementById('etudiant_id');
+        const fraisSelect = document.getElementById('frais_id');
+        const montantPayeInput = document.getElementById('montant_paye');
+        const montantAttenduSpan = document.getElementById('montant-attendu');
+        const soldeRestantSpan = document.getElementById('solde-restant');
+        const classeInfoText = document.getElementById('classe-info-text');
+        const etudiantInfoText = document.getElementById('etudiant-info-text');
+        const infosSupplementaires = document.getElementById('infos-supplementaires');
+        
+        // Variables pour stocker les données
+        let etudiantsData = {};
+        let fraisData = {};
+        
+        // Gestion du changement de niveau
+        niveauSelect.addEventListener('change', function() {
+            const niveau = this.value;
             
-            // Gestion du changement de niveau
-            niveauSelect.addEventListener('change', function() {
-                const niveau = this.value;
+            if (niveau) {
+                // Activer le champ classe
+                classeSelect.disabled = false;
+                classeInfoText.textContent = 'Chargement des classes...';
                 
-                if (niveau) {
-                    // Activer le champ classe
-                    classeSelect.disabled = false;
-                    
-                    // Charger les classes de ce niveau via AJAX
-                    chargerClassesParNiveau(niveau);
-                } else {
-                    // Désactiver et vider les champs classe et étudiant
-                    classeSelect.disabled = true;
-                    classeSelect.innerHTML = '<option value="">Sélectionner d\'abord un niveau</option>';
-                    
-                    etudiantSelect.disabled = true;
-                    etudiantSelect.innerHTML = '<option value="">Sélectionner d\'abord une classe</option>';
+                // Charger les classes de ce niveau via AJAX
+                chargerClassesParNiveau(niveau);
+            } else {
+                // Désactiver et vider les champs classe et étudiant
+                classeSelect.disabled = true;
+                classeSelect.innerHTML = '<option value="">Sélectionner d\'abord un niveau</option>';
+                classeInfoText.textContent = 'Veuillez d\'abord sélectionner un niveau';
+                
+                etudiantSelect.disabled = true;
+                etudiantSelect.innerHTML = '<option value="">Sélectionner d\'abord une classe</option>';
+                etudiantInfoText.textContent = 'Veuillez d\'abord sélectionner une classe';
+                
+                // Réinitialiser les infos supplémentaires
+                infosSupplementaires.innerHTML = 'Sélectionnez un élève pour voir les détails';
+            }
+        });
+        
+        // Gestion du changement de classe
+        classeSelect.addEventListener('change', function() {
+            const classeId = this.value;
+            
+            if (classeId) {
+                // Activer le champ étudiant
+                etudiantSelect.disabled = false;
+                etudiantInfoText.textContent = 'Chargement des élèves...';
+                
+                // Charger les étudiants de cette classe via AJAX
+                chargerEtudiantsParClasse(classeId);
+                
+                // Afficher les infos de la classe sélectionnée
+                const selectedClass = classeSelect.options[classeSelect.selectedIndex];
+                classeInfoText.textContent = selectedClass.textContent;
+            } else {
+                // Désactiver et vider le champ étudiant
+                etudiantSelect.disabled = true;
+                etudiantSelect.innerHTML = '<option value="">Sélectionner d\'abord une classe</option>';
+                etudiantInfoText.textContent = 'Veuillez d\'abord sélectionner une classe';
+                
+                // Réinitialiser les infos supplémentaires
+                infosSupplementaires.innerHTML = 'Sélectionnez un élève pour voir les détails';
+            }
+        });
+        
+        // Gestion du changement d'étudiant
+        etudiantSelect.addEventListener('change', function() {
+            const etudiantId = this.value;
+            
+            if (etudiantId && etudiantsData[etudiantId]) {
+                const etudiant = etudiantsData[etudiantId];
+                etudiantInfoText.textContent = `${etudiant.matricule} - ${etudiant.nom} ${etudiant.prenom}`;
+                
+                // Afficher les infos supplémentaires
+                afficherInfosEtudiant(etudiant);
+                
+                // Charger l'historique des paiements de l'étudiant
+                if (fraisSelect.value) {
+                    chargerHistoriquePaiements(etudiantId, fraisSelect.value);
                 }
-            });
+            } else {
+                etudiantInfoText.textContent = 'Sélectionnez un élève';
+                infosSupplementaires.innerHTML = 'Sélectionnez un élève pour voir les détails';
+            }
+        });
+        
+        // Gestion du changement de type de frais
+        fraisSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const montantAttendu = selectedOption.getAttribute('data-montant') || 0;
             
-            // Gestion du changement de classe
-            classeSelect.addEventListener('change', function() {
-                const classeId = this.value;
-                
-                if (classeId) {
-                    // Activer le champ étudiant
-                    etudiantSelect.disabled = false;
+            montantAttenduSpan.textContent = new Intl.NumberFormat('fr-FR', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(montantAttendu);
+            
+            // Pré-remplir le montant payé avec le montant attendu
+            montantPayeInput.value = montantAttendu;
+            
+            // Calculer le solde restant
+            calculerSoldeRestant(montantAttendu, montantPayeInput.value);
+            
+            // Si un étudiant est sélectionné, charger son historique pour ce frais
+            if (etudiantSelect.value && fraisSelect.value) {
+                chargerHistoriquePaiements(etudiantSelect.value, fraisSelect.value);
+            }
+        });
+        
+        // Gestion du changement du montant payé
+        montantPayeInput.addEventListener('input', function() {
+            const montantAttendu = parseFloat(montantAttenduSpan.textContent.replace(/\s/g, '').replace('Kwz', '')) || 0;
+            calculerSoldeRestant(montantAttendu, this.value);
+        });
+        
+        // Fonction pour charger les classes par niveau avec filière
+        function chargerClassesParNiveau(niveau) {
+            // Afficher un indicateur de chargement
+            classeSelect.innerHTML = '<option value="">Chargement...</option>';
+            
+            // Envoyer une requête AJAX pour récupérer les classes
+            fetch(`api/classes-par-niveau.php?niveau=${niveau}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Erreur réseau');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Vider le select
+                    classeSelect.innerHTML = '<option value="">Sélectionner une classe</option>';
                     
-                    // Charger les étudiants de cette classe via AJAX
-                    chargerEtudiantsParClasse(classeId);
-                } else {
-                    // Désactiver et vider le champ étudiant
-                    etudiantSelect.disabled = true;
-                    etudiantSelect.innerHTML = '<option value="">Sélectionner d\'abord une classe</option>';
-                }
-            });
-            
-            // Gestion du changement de type de frais
-            fraisSelect.addEventListener('change', function() {
-                const selectedOption = this.options[this.selectedIndex];
-                const montantAttendu = selectedOption.getAttribute('data-montant') || 0;
-                
-                montantAttenduSpan.textContent = new Intl.NumberFormat('fr-FR', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0
-                }).format(montantAttendu);
-                
-                // Pré-remplir le montant payé avec le montant attendu
-                montantPayeInput.value = montantAttendu;
-            });
-            
-            // Fonction pour charger les classes par niveau
-            function chargerClassesParNiveau(niveau) {
-                // Afficher un indicateur de chargement
-                classeSelect.innerHTML = '<option value="">Chargement...</option>';
-                
-                // Envoyer une requête AJAX pour récupérer les classes
-                fetch(`api/classes-par-niveau.php?niveau=${niveau}`)
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Erreur réseau');
+                    // Ajouter les options de classes avec filière
+                    data.forEach(classe => {
+                        const option = document.createElement('option');
+                        option.value = classe.id;
+                        let texte = `${classe.nom} - Niv. ${classe.niveau}`;
+                        if (classe.filiere) {
+                            texte += ` (${classe.filiere})`;
                         }
-                        return response.json();
-                    })
-                    .then(data => {
-                        // Vider le select
-                        classeSelect.innerHTML = '<option value="">Sélectionner une classe</option>';
-                        
-                        // Ajouter les options de classes
-                        data.forEach(classe => {
-                            const option = document.createElement('option');
-                            option.value = classe.id;
-                            option.textContent = `${classe.nom} - Niv. ${classe.niveau}`;
-                            classeSelect.appendChild(option);
-                        });
-                    })
-                    .catch(error => {
-                        console.error('Erreur lors du chargement des classes:', error);
-                        classeSelect.innerHTML = '<option value="">Erreur de chargement</option>';
+                        option.textContent = texte;
+                        option.setAttribute('data-filiere', classe.filiere || '');
+                        classeSelect.appendChild(option);
                     });
+                    
+                    classeInfoText.textContent = `${data.length} classe(s) disponible(s)`;
+                })
+                .catch(error => {
+                    console.error('Erreur lors du chargement des classes:', error);
+                    classeSelect.innerHTML = '<option value="">Erreur de chargement</option>';
+                    classeInfoText.textContent = 'Erreur lors du chargement des classes';
+                });
+        }
+        
+        // Fonction pour charger les étudiants par classe
+        function chargerEtudiantsParClasse(classeId) {
+            // Afficher un indicateur de chargement
+            etudiantSelect.innerHTML = '<option value="">Chargement...</option>';
+            
+            // Envoyer une requête AJAX pour récupérer les étudiants
+            fetch(`api/etudiants-par-classe.php?classe_id=${classeId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Erreur réseau');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Vider le select
+                    etudiantSelect.innerHTML = '<option value="">Sélectionner un élève</option>';
+                    
+                    // Stocker les données des étudiants
+                    etudiantsData = {};
+                    
+                    // Ajouter les options d'étudiants
+                    data.forEach(etudiant => {
+                        const option = document.createElement('option');
+                        option.value = etudiant.id;
+                        option.textContent = `${etudiant.matricule} - ${etudiant.nom} ${etudiant.prenom}`;
+                        etudiantSelect.appendChild(option);
+                        
+                        // Stocker les données complètes de l'étudiant
+                        etudiantsData[etudiant.id] = etudiant;
+                    });
+                    
+                    etudiantInfoText.textContent = `${data.length} élève(s) disponible(s)`;
+                })
+                .catch(error => {
+                    console.error('Erreur lors du chargement des étudiants:', error);
+                    etudiantSelect.innerHTML = '<option value="">Erreur de chargement</option>';
+                    etudiantInfoText.textContent = 'Erreur lors du chargement des élèves';
+                });
+        }
+        
+        // Fonction pour afficher les informations de l'étudiant
+        function afficherInfosEtudiant(etudiant) {
+            let html = `
+                <div class="mt-2">
+                    <strong>${etudiant.nom} ${etudiant.prenom}</strong><br>
+                    <small>Matricule: ${etudiant.matricule}</small><br>
+                    <small>Classe: ${etudiant.classe_nom}</small><br>
+                    <small>Niveau: ${etudiant.classe_niveau}</small>
+            `;
+            
+            if (etudiant.classe_filiere) {
+                html += `<br><small>Filière: ${etudiant.classe_filiere}</small>`;
             }
             
-            // Fonction pour charger les étudiants par classe
-            function chargerEtudiantsParClasse(classeId) {
-                // Afficher un indicateur de chargement
-                etudiantSelect.innerHTML = '<option value="">Chargement...</option>';
-                
-                // Envoyer une requête AJAX pour récupérer les étudiants
-                fetch(`api/etudiants-par-classe.php?classe_id=${classeId}`)
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Erreur réseau');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        // Vider le select
-                        etudiantSelect.innerHTML = '<option value="">Sélectionner un élève</option>';
-                        
-                        // Ajouter les options d'étudiants
-                        data.forEach(etudiant => {
-                            const option = document.createElement('option');
-                            option.value = etudiant.id;
-                            option.textContent = `${etudiant.matricule} - ${etudiant.nom} ${etudiant.prenom}`;
-                            etudiantSelect.appendChild(option);
-                        });
-                    })
-                    .catch(error => {
-                        console.error('Erreur lors du chargement des étudiants:', error);
-                        etudiantSelect.innerHTML = '<option value="">Erreur de chargement</option>';
-                    });
+            if (etudiant.telephone) {
+                html += `<br><small>Téléphone: ${etudiant.telephone}</small>`;
             }
             
-            // Initialiser le montant attendu
-            const fraisOption = fraisSelect.options[fraisSelect.selectedIndex];
-            if (fraisOption.value) {
-                const montantInitial = fraisOption.getAttribute('data-montant') || 0;
-                montantAttenduSpan.textContent = new Intl.NumberFormat('fr-FR', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0
-                }).format(montantInitial);
+            if (etudiant.email) {
+                html += `<br><small>Email: ${etudiant.email}</small>`;
             }
+            
+            html += `</div>`;
+            infosSupplementaires.innerHTML = html;
+        }
+        
+        // Fonction pour charger l'historique des paiements
+        function chargerHistoriquePaiements(etudiantId, fraisId) {
+            fetch(`api/historique-paiements.php?etudiant_id=${etudiantId}&frais_id=${fraisId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Erreur réseau');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Calculer le total déjà payé
+                    const totalPaye = data.total_paye || 0;
+                    const montantAttendu = parseFloat(montantAttenduSpan.textContent.replace(/\s/g, '').replace('Kwz', '')) || 0;
+                    
+                    // Mettre à jour l'affichage
+                    const solde = montantAttendu - totalPaye;
+                    soldeRestantSpan.textContent = new Intl.NumberFormat('fr-FR', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 0
+                    }).format(solde);
+                    
+                    // Mettre à jour les infos supplémentaires
+                    let historiqueHTML = `
+                        <div class="mt-2">
+                            <strong>Historique des paiements:</strong><br>
+                            <small>Total déjà payé: ${new Intl.NumberFormat('fr-FR').format(totalPaye)} Kwz</small><br>
+                            <small>Solde restant: ${new Intl.NumberFormat('fr-FR').format(solde)} Kwz</small>
+                    `;
+                    
+                    if (data.paiements && data.paiements.length > 0) {
+                        historiqueHTML += `<br><small>Dernier paiement: ${data.paiements[0].date} (${data.paiements[0].montant} Kwz)</small>`;
+                    }
+                    
+                    historiqueHTML += `</div>`;
+                    
+                    // Ajouter l'historique aux infos supplémentaires
+                    const currentInfos = infosSupplementaires.innerHTML;
+                    infosSupplementaires.innerHTML = currentInfos + historiqueHTML;
+                    
+                    // Pré-remplir le montant payé avec le solde restant (si solde > 0)
+                    if (solde > 0) {
+                        montantPayeInput.value = solde;
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur lors du chargement de l\'historique:', error);
+                });
+        }
+        
+        // Fonction pour calculer le solde restant
+        function calculerSoldeRestant(montantAttendu, montantPaye) {
+            const solde = montantAttendu - parseFloat(montantPaye || 0);
+            soldeRestantSpan.textContent = new Intl.NumberFormat('fr-FR', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(solde);
+            
+            // Changer la couleur selon le solde
+            if (solde > 0) {
+                soldeRestantSpan.className = 'text-danger';
+            } else if (solde < 0) {
+                soldeRestantSpan.className = 'text-warning';
+            } else {
+                soldeRestantSpan.className = 'text-success';
+            }
+        }
+        
+        // Initialiser le montant attendu
+        const fraisOption = fraisSelect.options[fraisSelect.selectedIndex];
+        if (fraisOption.value) {
+            const montantInitial = fraisOption.getAttribute('data-montant') || 0;
+            montantAttenduSpan.textContent = new Intl.NumberFormat('fr-FR', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(montantInitial);
+            calculerSoldeRestant(montantInitial, montantPayeInput.value);
+        }
 
-            // Activation des tooltips
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl)
-            });
+        // Activation des tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
         });
 
-        function genererRecu(paiementId) {
-            // Ouvrir dans une nouvelle fenêtre pour impression
-            var url = 'generer_recu.php?id=' + paiementId + '&auto_print=1';
-            var windowFeatures = 'width=800,height=900,scrollbars=yes,resizable=yes';
-            window.open(url, '_blank', windowFeatures);
+        // Mettre à jour les classes dans le filtre quand le niveau change
+        const filtreNiveau = document.getElementById('filtre_niveau');
+        const filtreClasse = document.getElementById('filtre_classe');
+        
+        if (filtreNiveau && filtreClasse) {
+            filtreNiveau.addEventListener('change', function() {
+                // Le formulaire se soumet automatiquement
+            });
         }
-    </script>
+    });
+
+    function genererRecu(paiementId) {
+        // Ouvrir dans une nouvelle fenêtre pour impression
+        var url = 'generer_recu.php?id=' + paiementId + '&auto_print=1';
+        var windowFeatures = 'width=800,height=900,scrollbars=yes,resizable=yes';
+        window.open(url, '_blank', windowFeatures);
+    }
+</script>
 </body>
 </html>

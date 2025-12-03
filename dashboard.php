@@ -10,8 +10,8 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || !$_SESSION
 $database = new Database();
 $db = $database->getConnection();
 
-// Récupérer la liste des classes pour le filtre
-$query_classes = "SELECT * FROM classe ORDER BY niveau, nom";
+// Récupérer la liste des classes pour le filtre (avec filière et année scolaire)
+$query_classes = "SELECT id, nom, niveau, filiere, annee_scolaire FROM classe ORDER BY niveau, nom";
 $stmt_classes = $db->prepare($query_classes);
 $stmt_classes->execute();
 $classes = $stmt_classes->fetchAll(PDO::FETCH_ASSOC);
@@ -19,8 +19,8 @@ $classes = $stmt_classes->fetchAll(PDO::FETCH_ASSOC);
 // Récupérer les années scolaires disponibles
 $query_annees = "SELECT DISTINCT annee_scolaire FROM classe ORDER BY annee_scolaire DESC";
 $stmt_annees = $db->prepare($query_annees);
-$stmt_annees->execute();
-$annees_scolaires = $stmt_annees->fetchAll(PDO::FETCH_ASSOC);
+$stmt_annees->execute(); 
+$annees_scolaires = $stmt_annees->fetchAll(PDO::FETCH_ASSOC); 
 
 // Récupérer et valider les filtres
 $filtre_classe = Validator::validateNumber($_GET['classe'] ?? 0) ?: '';
@@ -134,7 +134,7 @@ try {
 
 // Derniers paiements
 try {
-    $query_paiements_recent = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, f.type_frais 
+    $query_paiements_recent = "SELECT p.*, e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.filiere, f.type_frais 
                        FROM paiements p 
                        JOIN etudiants e ON p.etudiant_id = e.id 
                        LEFT JOIN classe c ON e.classe_id = c.id 
@@ -184,9 +184,9 @@ try {
     $data_graph = [];
 }
 
-// Statistiques par classe (pour le graphique circulaire) avec année scolaire
+// Statistiques par classe (pour le graphique circulaire) avec année scolaire et filière
 try {
-    $query_stats_classes = "SELECT c.nom as classe_nom, COUNT(e.id) as nb_etudiants, 
+    $query_stats_classes = "SELECT c.nom as classe_nom, c.filiere, COUNT(e.id) as nb_etudiants, 
                                    COALESCE(SUM(p.montant_paye), 0) as total_paiements
                             FROM classe c 
                             LEFT JOIN etudiants e ON c.id = e.classe_id 
@@ -196,7 +196,7 @@ try {
         $query_stats_classes .= " WHERE c.annee_scolaire = :annee_scolaire";
         $params_classes[':annee_scolaire'] = $filtre_annee_scolaire;
     }
-    $query_stats_classes .= " GROUP BY c.id, c.nom 
+    $query_stats_classes .= " GROUP BY c.id, c.nom, c.filiere 
                             ORDER BY total_paiements DESC 
                             LIMIT 8";
 
@@ -213,17 +213,20 @@ try {
 
 // Récupérer le nom de la classe filtrée pour l'affichage
 $classe_filtree_nom = '';
+$classe_filtree_filiere = '';
 if (!empty($filtre_classe)) {
     try {
-        $query_classe_filtree = "SELECT nom FROM classe WHERE id = :classe_id";
+        $query_classe_filtree = "SELECT nom, filiere FROM classe WHERE id = :classe_id";
         $stmt_classe_filtree = $db->prepare($query_classe_filtree);
         $stmt_classe_filtree->bindParam(':classe_id', $filtre_classe, PDO::PARAM_INT);
         $stmt_classe_filtree->execute();
         $classe_filtree = $stmt_classe_filtree->fetch(PDO::FETCH_ASSOC);
         $classe_filtree_nom = htmlspecialchars($classe_filtree['nom'] ?? '');
+        $classe_filtree_filiere = htmlspecialchars($classe_filtree['filiere'] ?? '');
     } catch (PDOException $e) {
         error_log("Erreur récupération nom classe: " . $e->getMessage());
         $classe_filtree_nom = '';
+        $classe_filtree_filiere = '';
     }
 }
 ?>
@@ -250,16 +253,17 @@ include 'layout.php';
             <input type="hidden" name="csrf_token" value="<?php echo CSRF::generateToken(); ?>">
             <div class="col-md-3">
                 <label for="filtre_annee_scolaire" class="form-label">Année Scolaire</label>
-                <select class="form-control" id="filtre_annee_scolaire" name="annee_scolaire">
+                <select class="form-control" id="filtre_annee_scolaire" name="annee_scolaire"> 
+                    <option value=""> --Toutes--</option> 
                     <?php foreach ($annees_scolaires as $annee): ?>
                     <option value="<?php echo htmlspecialchars($annee['annee_scolaire']); ?>" 
                         <?php echo ($filtre_annee_scolaire == $annee['annee_scolaire']) ? 'selected' : ''; ?>>
                         <?php echo htmlspecialchars($annee['annee_scolaire']); ?>
                     </option>
-                    <?php endforeach; ?>
+                    <?php endforeach; ?> 
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <label for="filtre_classe" class="form-label">Classe</label>
                 <select class="form-control" id="filtre_classe" name="classe">
                     <option value="">Toutes les classes</option>
@@ -268,15 +272,27 @@ include 'layout.php';
                     $classes_filtrees = $classes;
                     if (!empty($filtre_annee_scolaire)) {
                         $classes_filtrees = array_filter($classes, function($classe) use ($filtre_annee_scolaire) {
-                            return $classe['annee_scolaire'] == $filtre_annee_scolaire;
+                            return isset($classe['annee_scolaire']) && $classe['annee_scolaire'] == $filtre_annee_scolaire;
                         });
                     }
-                    ?>
+                    
+                    // Afficher les classes filtrées
+                    if (empty($classes_filtrees)): ?>
+                    <option value="" disabled>Aucune classe disponible</option>
+                    <?php else: ?>
                     <?php foreach ($classes_filtrees as $classe): ?>
                     <option value="<?php echo $classe['id']; ?>" <?php echo ($filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
-                        <?php echo htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']); ?>
+                        <?php 
+                        // Afficher nom, niveau et filière
+                        $texte_classe = htmlspecialchars($classe['nom']) . ' - ' . htmlspecialchars($classe['niveau']);
+                        if (!empty($classe['filiere'])) {
+                            $texte_classe .= ' (' . htmlspecialchars($classe['filiere']) . ')';
+                        }
+                        echo $texte_classe;
+                        ?>
                     </option>
                     <?php endforeach; ?>
+                    <?php endif; ?>
                 </select>
             </div>
             <div class="col-md-2">
@@ -284,7 +300,7 @@ include 'layout.php';
                     <i class="bi bi-filter"></i> Appliquer
                 </button>
             </div>
-            <div class="col-md-4 text-end">
+            <div class="col-md-3 text-end">
                 <?php if (!empty($filtre_classe) || !empty($filtre_annee_scolaire)): ?>
                 <span class="badge bg-info fs-6">
                     <i class="bi bi-info-circle"></i> Filtres actifs :
@@ -294,7 +310,11 @@ include 'layout.php';
                         $filtres_actifs[] = "Année: " . htmlspecialchars($filtre_annee_scolaire);
                     }
                     if (!empty($filtre_classe)) {
-                        $filtres_actifs[] = "Classe: " . $classe_filtree_nom;
+                        $filtre_text = "Classe: " . $classe_filtree_nom;
+                        if (!empty($classe_filtree_filiere)) {
+                            $filtre_text .= ' (' . $classe_filtree_filiere . ')';
+                        }
+                        $filtres_actifs[] = $filtre_text;
                     }
                     echo htmlspecialchars(implode(' | ', $filtres_actifs));
                     ?>
@@ -321,6 +341,9 @@ include 'layout.php';
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Dans la classe';
+                                if (!empty($classe_filtree_filiere)) {
+                                    echo ' (' . $classe_filtree_filiere . ')';
+                                }
                             } elseif (!empty($filtre_annee_scolaire)) {
                                 echo "Année " . htmlspecialchars($filtre_annee_scolaire);
                             } else {
@@ -348,6 +371,9 @@ include 'layout.php';
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Collectés classe';
+                                if (!empty($classe_filtree_filiere)) {
+                                    echo ' (' . $classe_filtree_filiere . ')';
+                                }
                             } elseif (!empty($filtre_annee_scolaire)) {
                                 echo "Année " . htmlspecialchars($filtre_annee_scolaire);
                             } else {
@@ -392,6 +418,9 @@ include 'layout.php';
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Mensuels classe';
+                                if (!empty($classe_filtree_filiere)) {
+                                    echo ' (' . $classe_filtree_filiere . ')';
+                                }
                             } elseif (!empty($filtre_annee_scolaire)) {
                                 echo "Mensuels " . htmlspecialchars($filtre_annee_scolaire);
                             } else {
@@ -466,7 +495,15 @@ include 'layout.php';
                             <p class="mb-1 small"><?php echo htmlspecialchars($paiement['type_frais']); ?></p>
                             <div class="d-flex justify-content-between">
                                 <small class="text-muted"><?php echo htmlspecialchars(date('d/m/Y', strtotime($paiement['date_paiement']))); ?></small>
-                                <small class="text-info"><?php echo htmlspecialchars($paiement['classe_nom'] ?? '-'); ?></small>
+                                <small class="text-info">
+                                    <?php 
+                                    $classe_text = htmlspecialchars($paiement['classe_nom'] ?? '-');
+                                    if (!empty($paiement['filiere'])) {
+                                        $classe_text .= ' (' . htmlspecialchars($paiement['filiere']) . ')';
+                                    }
+                                    echo $classe_text;
+                                    ?>
+                                </small>
                             </div>
                         </div>
                         <?php endforeach; ?>
@@ -513,7 +550,7 @@ include 'layout.php';
                         </a>
                     </div>
                     <div class="col-md-3">
-                        <a href="rapports.php" class="btn btn-outline-info w-100">
+                        <a href="rapport.php" class="btn btn-outline-info w-100">
                             <i class="bi bi-file-earmark-text"></i><br>
                             Générer Rapport
                         </a>
@@ -566,7 +603,7 @@ const paiementsChart = new Chart(ctx, {
     }
 });
 
-// Graphique circulaire des classes
+// Graphique circulaire des classes avec filière dans les labels
 const ctxClasses = document.getElementById('classesChart').getContext('2d');
 const classesChart = new Chart(ctxClasses, {
     type: 'doughnut',
@@ -574,7 +611,11 @@ const classesChart = new Chart(ctxClasses, {
         labels: [<?php 
             $labels = [];
             foreach ($stats_classes as $c) {
-                $labels[] = "'" . addslashes(htmlspecialchars($c['classe_nom'])) . "'";
+                $label = htmlspecialchars($c['classe_nom']);
+                if (!empty($c['filiere'])) {
+                    $label .= ' (' . htmlspecialchars($c['filiere']) . ')';
+                }
+                $labels[] = "'" . addslashes($label) . "'";
             }
             echo implode(', ', $labels);
         ?>],
@@ -601,7 +642,22 @@ const classesChart = new Chart(ctxClasses, {
                 labels: {
                     boxWidth: 12,
                     font: {
-                        size: 10
+                        size: 9
+                    },
+                    generateLabels: function(chart) {
+                        const data = chart.data;
+                        if (data.labels.length && data.datasets.length) {
+                            return data.labels.map(function(label, i) {
+                                const value = data.datasets[0].data[i];
+                                return {
+                                    text: label.length > 20 ? label.substring(0, 17) + '...' : label,
+                                    fillStyle: data.datasets[0].backgroundColor[i],
+                                    hidden: false,
+                                    index: i
+                                };
+                            });
+                        }
+                        return [];
                     }
                 }
             },
@@ -610,6 +666,16 @@ const classesChart = new Chart(ctxClasses, {
                     label: function(context) {
                         let label = context.label || '';
                         let value = context.parsed || 0;
+                        let classe_data = <?php echo json_encode($stats_classes); ?>;
+                        if (classe_data[context.dataIndex]) {
+                            let classe_info = classe_data[context.dataIndex];
+                            let nb_etudiants = classe_info.nb_etudiants || 0;
+                            return [
+                                label,
+                                'Élèves: ' + nb_etudiants,
+                                'Total: ' + value.toLocaleString() + ' Kwz'
+                            ];
+                        }
                         return label + ': ' + value.toLocaleString() + ' Kwz';
                     }
                 }

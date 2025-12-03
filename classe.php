@@ -62,9 +62,10 @@ if ($_POST && isset($_POST['modifier_classe'])) {
         $annee_scolaire = $_POST['annee_scolaire'];
         
         // Vérifier si une autre classe a le même nom pour la même année
-        $query_check = "SELECT id FROM classe WHERE nom = :nom AND annee_scolaire = :annee_scolaire AND id != :id";
+        $query_check = "SELECT id FROM classe WHERE filiere = :filiere AND nom = :nom AND annee_scolaire = :annee_scolaire AND id != :id";
         $stmt_check = $db->prepare($query_check);
         $stmt_check->bindParam(':nom', $nom);
+        $stmt_check->bindParam(':filiere', $filiere);
         $stmt_check->bindParam(':annee_scolaire', $annee_scolaire);
         $stmt_check->bindParam(':id', $classe_id);
         $stmt_check->execute();

@@ -16,8 +16,8 @@ if (!isset($_SESSION['role']) || ($_SESSION['role'] != 'admin' && $_SESSION['rol
 $database = new Database();
 $db = $database->getConnection();
 
-// Récupérer la liste des classes pour les selects
-$query_classes = "SELECT * FROM classe ORDER BY niveau, nom";
+// Récupérer la liste des classes pour les selects (avec filière)
+$query_classes = "SELECT id, nom, niveau, filiere FROM classe ORDER BY niveau, nom";
 $stmt_classes = $db->prepare($query_classes);
 $stmt_classes->execute();
 $classes = $stmt_classes->fetchAll(PDO::FETCH_ASSOC);
@@ -188,8 +188,8 @@ if (!empty($filtre_classe) && $filtre_classe !== 'all') {
     $params[':classe_id'] = $filtre_classe;
 }
 
-// Récupérer la liste des étudiants avec les noms des classes
-$query = "SELECT e.*, c.nom as classe_nom, c.niveau 
+// Récupérer la liste des étudiants avec les noms des classes et filière
+$query = "SELECT e.*, c.nom as classe_nom, c.niveau, c.filiere 
           FROM etudiants e 
           LEFT JOIN classe c ON e.classe_id = c.id 
           $where_condition
@@ -205,12 +205,12 @@ $etudiants = $stmt->fetchAll(PDO::FETCH_ASSOC);
 // Récupérer le nom de la classe filtrée pour l'affichage
 $classe_filtree_nom = '';
 if (!empty($filtre_classe) && $filtre_classe !== 'all') {
-    $query_classe_filtree = "SELECT nom FROM classe WHERE id = :classe_id";
+    $query_classe_filtree = "SELECT nom, filiere FROM classe WHERE id = :classe_id";
     $stmt_classe_filtree = $db->prepare($query_classe_filtree);
     $stmt_classe_filtree->bindParam(':classe_id', $filtre_classe, PDO::PARAM_INT);
     $stmt_classe_filtree->execute();
     $classe_filtree = $stmt_classe_filtree->fetch(PDO::FETCH_ASSOC);
-    $classe_filtree_nom = htmlspecialchars($classe_filtree['nom'] ?? '');
+    $classe_filtree_nom = htmlspecialchars($classe_filtree['nom'] . (!empty($classe_filtree['filiere']) ? ' (' . $classe_filtree['filiere'] . ')' : ''));
 }
 
 // Récupérer un étudiant spécifique pour modification
@@ -357,7 +357,14 @@ include 'layout.php';
                 <?php foreach ($classes as $classe): ?>
                 <li><a class="dropdown-item <?php echo $filtre_classe == $classe['id'] ? 'active' : ''; ?>" 
                        href="?classe=<?php echo $classe['id']; ?>">
-                    <i class="bi bi-person"></i> <?php echo htmlspecialchars($classe['nom']); ?>
+                    <i class="bi bi-person"></i> 
+                    <?php 
+                    $texte_classe = htmlspecialchars($classe['nom']);
+                    if (!empty($classe['filiere'])) {
+                        $texte_classe .= ' - ' . htmlspecialchars($classe['filiere']);
+                    }
+                    echo $texte_classe;
+                    ?>
                 </a></li>
                 <?php endforeach; ?>
             </ul>
@@ -372,7 +379,7 @@ include 'layout.php';
                         <th>Matricule</th>
                         <th>Nom et Prénom</th>
                         <th>Classe</th>
-                        <th>Niveau</th>
+                        <th>Filière</th>
                         <th>Contact</th>
                         <th>Date Inscription</th>
                         <th>Actions</th>
@@ -388,10 +395,13 @@ include 'layout.php';
                             <strong><?php echo htmlspecialchars($etudiant['nom'] . ' ' . $etudiant['prenom']); ?></strong>
                         </td>
                         <td>
-                            <span class="badge bg-secondary"><?php echo htmlspecialchars($etudiant['classe_nom'] ?? 'Non assigné'); ?></span>
+                            <div>
+                                <span class="badge bg-secondary"><?php echo htmlspecialchars($etudiant['classe_nom'] ?? 'Non assigné'); ?></span><br>
+                                <small class="text-muted"><?php echo htmlspecialchars($etudiant['niveau'] ?? '-'); ?></small>
+                            </div>
                         </td>
                         <td>
-                            <small class="text-muted"><?php echo htmlspecialchars($etudiant['niveau'] ?? '-'); ?></small>
+                            <small class="text-muted"><?php echo htmlspecialchars($etudiant['filiere'] ?? '-'); ?></small>
                         </td>
                         <td>
                             <div>
@@ -491,7 +501,14 @@ include 'layout.php';
                                 <?php foreach ($classes as $classe): ?>
                                 <option value="<?php echo $classe['id']; ?>" 
                                     <?php echo (!empty($_POST['classe_id']) && $_POST['classe_id'] == $classe['id']) || (!empty($filtre_classe) && $filtre_classe !== 'all' && $filtre_classe == $classe['id']) ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']); ?>
+                                    <?php 
+                                    // Afficher nom, niveau et filière
+                                    $texte_classe = htmlspecialchars($classe['nom']) . ' - ' . htmlspecialchars($classe['niveau']);
+                                    if (!empty($classe['filiere'])) {
+                                        $texte_classe .= ' (' . htmlspecialchars($classe['filiere']) . ')';
+                                    }
+                                    echo $texte_classe;
+                                    ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>
@@ -556,7 +573,14 @@ include 'layout.php';
                                 <option value="">Sélectionner une classe</option>
                                 <?php foreach ($classes as $classe): ?>
                                 <option value="<?php echo $classe['id']; ?>">
-                                    <?php echo htmlspecialchars($classe['nom'] . ' - ' . $classe['niveau']); ?>
+                                    <?php 
+                                    // Afficher nom, niveau et filière
+                                    $texte_classe = htmlspecialchars($classe['nom']) . ' - ' . htmlspecialchars($classe['niveau']);
+                                    if (!empty($classe['filiere'])) {
+                                        $texte_classe .= ' (' . htmlspecialchars($classe['filiere']) . ')';
+                                    }
+                                    echo $texte_classe;
+                                    ?>
                                 </option>
                                 <?php endforeach; ?>
                             </select>

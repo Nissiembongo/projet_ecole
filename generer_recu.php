@@ -14,10 +14,10 @@ $paiement_id = $_GET['id'];
 $database = new Database();
 $db = $database->getConnection();
 
-// Récupérer les informations du paiement avec jointure sur la table classe
+// Récupérer les informations du paiement avec jointure sur la table classe (incluant filière)
 $query = "SELECT p.*, 
                  e.nom, e.prenom, e.matricule, e.telephone, e.email,
-                 c.nom as classe_nom, c.niveau as classe_niveau,
+                 c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
                  f.type_frais, f.montant as montant_attendu,
                  u.nom_complet as caissier
           FROM paiements p 
@@ -43,7 +43,7 @@ if (empty($paiement['caissier'])) {
     $query_user = "SELECT nom_complet FROM utilisateurs WHERE id = :user_id";
     $stmt_user = $db->prepare($query_user);
     $stmt_user->bindParam(':user_id', $_SESSION['user_id']);
-    $stmt_user->execute();
+$stmt_user->execute();
     $user = $stmt_user->fetch(PDO::FETCH_ASSOC);
     $paiement['caissier'] = $user['nom_complet'] ?? 'Caissier';
 }
@@ -51,10 +51,16 @@ if (empty($paiement['caissier'])) {
 // Calculer le reste à payer
 $reste_a_payer = $paiement['montant_attendu'] - $paiement['montant_paye'];
 
-// Construire le nom complet de la classe
+// Construire le nom complet de la classe avec filière
 $classe_complete = $paiement['classe_nom'] ?? 'Non assigné';
 if ($paiement['classe_niveau']) {
-    $classe_complete = $paiement['classe_nom'] . ' (' . $paiement['classe_niveau'] . ')';
+    $classe_complete = $paiement['classe_nom'] . ' (' . $paiement['classe_niveau'];
+    if (!empty($paiement['filiere'])) {
+        $classe_complete .= ' - ' . $paiement['filiere'];
+    }
+    $classe_complete .= ')';
+} elseif (!empty($paiement['filiere'])) {
+    $classe_complete .= ' (' . $paiement['filiere'] . ')';
 }
 
 // Chemins des images (à adapter selon votre structure)
@@ -366,6 +372,15 @@ $has_filigrane = file_exists($filigrane_image);
             border-radius: 2px;
             font-size: 8px;
         }
+
+        .filiere-badge {
+            background: #17a2b8;
+            color: white;
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-size: 8px;
+            margin-left: 3px;
+        }
     </style>
 </head>
 <body>
@@ -431,9 +446,27 @@ $has_filigrane = file_exists($filigrane_image);
             <div class="info-row">
                 <div class="info-label">Classe:</div>
                 <div class="info-value">
-                    <span class="classe-badge"><?php echo htmlspecialchars($classe_complete); ?></span>
+                    <span class="classe-badge"><?php echo htmlspecialchars($paiement['classe_nom'] ?? 'Non assigné'); ?></span>
+                    <?php if ($paiement['classe_niveau']): ?>
+                    <small class="text-muted">(Niveau: <?php echo htmlspecialchars($paiement['classe_niveau']); ?>)</small>
+                    <?php endif; ?>
+                    <?php if (!empty($paiement['filiere'])): ?>
+                    <span class="filiere-badge"><?php echo htmlspecialchars($paiement['filiere']); ?></span>
+                    <?php endif; ?>
                 </div>
-            </div> 
+            </div>
+            <?php if (!empty($paiement['telephone'])): ?>
+            <div class="info-row">
+                <div class="info-label">Téléphone:</div>
+                <div class="info-value"><?php echo htmlspecialchars($paiement['telephone']); ?></div>
+            </div>
+            <?php endif; ?>
+            <?php if (!empty($paiement['email'])): ?>
+            <div class="info-row">
+                <div class="info-label">Email:</div>
+                <div class="info-value"><?php echo htmlspecialchars($paiement['email']); ?></div>
+            </div>
+            <?php endif; ?>
         </div>
 
         <!-- Détails du paiement -->
@@ -485,6 +518,14 @@ $has_filigrane = file_exists($filigrane_image);
                 </div>
             </div>
             <?php endif; ?>
+            <div class="info-row">
+                <div class="info-label">Description Classe:</div>
+                <div class="info-value">
+                    <small class="text-muted">
+                        <?php echo htmlspecialchars($classe_complete); ?>
+                    </small>
+                </div>
+            </div>
         </div>
 
         <!-- Montant en lettres -->
@@ -516,7 +557,8 @@ $has_filigrane = file_exists($filigrane_image);
         <div class="footer">
             <div><strong>Ce reçu est généré automatiquement et fait foi de paiement</strong></div>
             <div style="margin: 8px 0; font-size: 9px;">
-                Conservez précieusement ce reçu pour toute réclamation ou justificatif
+                Conservez précieusement ce reçu pour toute réclamation ou justificatif<br>
+                <small>Classe: <?php echo htmlspecialchars($classe_complete); ?></small>
             </div>
             <div style="font-size: 8px; color: #95a5a6;">
                 Reçu N°: <?php echo sprintf('REC%06d', $paiement['id']); ?> | 

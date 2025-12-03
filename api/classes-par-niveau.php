@@ -1,21 +1,17 @@
 <?php
 include '../config.php';
+header('Content-Type: application/json');
 
 $database = new Database();
 $db = $database->getConnection();
 
 $niveau = $_GET['niveau'] ?? '';
 
-if (!empty($niveau)) {
-    $query = "SELECT id, nom, niveau FROM classe WHERE niveau = :niveau ORDER BY nom";
-    $stmt = $db->prepare($query);
-    $stmt->bindParam(':niveau', $niveau);
-    $stmt->execute();
-    $classes = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    header('Content-Type: application/json');
-    echo json_encode($classes);
-} else {
-    echo json_encode([]);
-}
+$query = "SELECT id, nom, niveau, filiere FROM classe WHERE niveau = :niveau ORDER BY nom";
+$stmt = $db->prepare($query);
+$stmt->bindParam(':niveau', $niveau);
+$stmt->execute();
+$classes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+echo json_encode($classes);
 ?>
