@@ -27,6 +27,7 @@ if ($_POST && isset($_POST['ajouter_utilisateur'])) {
         try {
             // Validation et nettoyage des données
             $nom_complet = Validator::validateText($_POST['nom_complet'] ?? '');
+            $email = Validator::validateText($_POST['email'] ?? ''); 
             $username = Validator::validateText($_POST['username'] ?? '');
             $role = Validator::validateText($_POST['role'] ?? '');
             $password = $_POST['password'] ?? '';
@@ -46,12 +47,15 @@ if ($_POST && isset($_POST['ajouter_utilisateur'])) {
                 if ($stmt_check_username->rowCount() > 0) {
                     $error = "Ce nom d'utilisateur est déjà utilisé!";
                 } else {
+                    $current_date = date('Y-m-d H:i:s');
                     $password_hash = password_hash($password, PASSWORD_DEFAULT);
-                    $query = "INSERT INTO utilisateurs (nom_complet, username, password, role, statut) 
-                              VALUES (:nom_complet, :username, :password, :role, 'actif')";
+                    $query = "INSERT INTO utilisateurs (nom_complet, email, username, created_at,  password, role, statut) 
+                              VALUES (:nom_complet, :email, :username, :created_at, :password, :role, 'actif')";
                     $stmt = $db->prepare($query);
                     $stmt->bindParam(':nom_complet', $nom_complet);
+                    $stmt->bindParam(':email', $email);
                     $stmt->bindParam(':username', $username);
+                    $stmt->bindParam(':created_at', $current_date);
                     $stmt->bindParam(':password', $password_hash);
                     $stmt->bindParam(':role', $role);
                     
@@ -80,6 +84,7 @@ if ($_POST && isset($_POST['modifier_utilisateur'])) {
             $utilisateur_id = Validator::validateNumber($_POST['utilisateur_id'] ?? 0);
             $nom_complet = Validator::validateText($_POST['nom_complet'] ?? '');
             $username = Validator::validateText($_POST['username'] ?? '');
+            $email = Validator::validateText($_POST['email'] ?? '');
             $role = Validator::validateText($_POST['role'] ?? '');
 
             if (!$utilisateur_id || !$nom_complet || !$username || !$role) {
@@ -95,11 +100,12 @@ if ($_POST && isset($_POST['modifier_utilisateur'])) {
                 if ($stmt_check_username->rowCount() > 0) {
                     $error = "Ce nom d'utilisateur est déjà utilisé par un autre utilisateur!";
                 } else {
-                    $query = "UPDATE utilisateurs SET nom_complet = :nom_complet, username = :username, role = :role 
+                    $query = "UPDATE utilisateurs SET nom_complet = :nom_complet, username = :username,  email = :email, role = :role 
                              WHERE id = :id";
                     $stmt = $db->prepare($query);
                     $stmt->bindParam(':nom_complet', $nom_complet);
                     $stmt->bindParam(':username', $username);
+                    $stmt->bindParam(':email', $email);
                     $stmt->bindParam(':role', $role);
                     $stmt->bindParam(':id', $utilisateur_id, PDO::PARAM_INT);
                     
@@ -335,6 +341,8 @@ include 'layout.php';
                         <th>Nom Complet</th>
                         <th>Nom d'utilisateur</th>
                         <th>Rôle</th>
+                        <th>Email</th>
+                        <th>Date de création</th>
                         <th>Statut</th>
                         <th>Dernière Connexion</th>
                         <th>Actions</th>
@@ -358,6 +366,12 @@ include 'layout.php';
                             ?>">
                                 <?php echo htmlspecialchars($roles[$utilisateur['role']] ?? $utilisateur['role']); ?>
                             </span>
+                        </td>
+                        <td> 
+                            <?php echo htmlspecialchars($utilisateur['email']); ?> 
+                        </td>
+                        <td> 
+                            <?php echo htmlspecialchars($utilisateur['created_at']); ?> 
                         </td>
                         <td>
                             <span class="badge bg-<?php echo ($utilisateur['statut'] ?? 'actif') == 'actif' ? 'success' : 'secondary'; ?>">
@@ -450,6 +464,12 @@ include 'layout.php';
                             <div class="form-text">Ce nom sera utilisé pour se connecter au système.</div>
                         </div>
                         <div class="col-12">
+                            <label for="email" class="form-label">Nom d'utilisateur *</label>
+                            <input type="mail" class="form-control" id="email" name="email" required 
+                                   placeholder="Ex admin@gmail.com" maxlength="100"
+                                   value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email']) : ''; ?>"> 
+                        </div>
+                        <div class="col-12">
                             <label for="password" class="form-label">Mot de passe *</label>
                             <input type="password" class="form-control" id="password" name="password" required 
                                    placeholder="Mot de passe sécurisé (min. 8 caractères)" minlength="8"
@@ -500,6 +520,10 @@ include 'layout.php';
                         <div class="col-12">
                             <label for="modifier_username" class="form-label">Nom d'utilisateur *</label>
                             <input type="text" class="form-control" id="modifier_username" name="username" required maxlength="50">
+                        </div>
+                        <div class="col-12">
+                            <label for="modifier_email" class="form-label">Email</label>
+                            <input type="mail" class="form-control" id="modifier_email" name="email" required maxlength="50">
                         </div>
                         <div class="col-12">
                             <label for="modifier_role" class="form-label">Rôle *</label>
@@ -571,6 +595,7 @@ function chargerDonneesUtilisateur(utilisateur) {
     document.getElementById('modifier_utilisateur_id').value = utilisateur.id;
     document.getElementById('modifier_nom_complet').value = utilisateur.nom_complet;
     document.getElementById('modifier_username').value = utilisateur.username;
+    document.getElementById('modifier_email').value = utilisateur.email;
     document.getElementById('modifier_role').value = utilisateur.role;
 }
 
