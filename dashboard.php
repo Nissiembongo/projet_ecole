@@ -336,24 +336,24 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-primary">Élèves</h5>
-                        <h2 class="text-primary"><?php echo htmlspecialchars($stats['etudiants']); ?></h2>
-                        <p class="card-text">
+                        <h4 class="text-primary"><?php echo htmlspecialchars($stats['etudiants']); ?></h4>
+                        <p class="card-text h6 small">
                             <?php 
-                            if (!empty($filtre_classe)) {
-                                echo 'Dans la classe';
-                                if (!empty($classe_filtree_filiere)) {
-                                    echo ' (' . $classe_filtree_filiere . ')';
+                                if (!empty($filtre_classe)) {
+                                    echo 'Dans la classe';
+                                    if (!empty($classe_filtree_filiere)) {
+                                        echo ' (' . $classe_filtree_filiere . ')';
+                                    }
+                                } elseif (!empty($filtre_annee_scolaire)) {
+                                    echo "Année " . htmlspecialchars($filtre_annee_scolaire);
+                                } else {
+                                    echo 'Total inscrits';
                                 }
-                            } elseif (!empty($filtre_annee_scolaire)) {
-                                echo "Année " . htmlspecialchars($filtre_annee_scolaire);
-                            } else {
-                                echo 'Total inscrits';
-                            }
                             ?>
                         </p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-people display-4 text-primary opacity-50"></i>
+                        <i class="bi bi-people display-6 text-primary opacity-50"></i>
                     </div>
                 </div>
             </div>
@@ -366,8 +366,8 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-success">Paiements</h5>
-                        <h2 class="text-success"><?php echo htmlspecialchars(number_format($stats['paiements'], 0, ',', ' ')); ?> Kwz</h2>
-                        <p class="card-text">
+                        <h4 class="text-success"><?php echo htmlspecialchars(number_format($stats['paiements'], 0, ',', ' ')); ?> Kwz</h4>
+                        <p class="card-text h6 small">
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Collectés classe';
@@ -383,7 +383,7 @@ include 'layout.php';
                         </p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-cash-coin display-4 text-success opacity-50"></i>
+                        <i class="bi bi-cash-coin display-6 text-success opacity-50"></i>
                     </div>
                 </div>
             </div>
@@ -396,11 +396,11 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-warning">Types de Frais</h5>
-                        <h2 class="text-warning"><?php echo htmlspecialchars($stats['frais']); ?></h2>
-                        <p class="card-text">Catégories</p>
+                        <h4 class="text-warning"><?php echo htmlspecialchars($stats['frais']); ?></h4>
+                        <p class="card-text h6 small">Catégories</p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-list-ul display-4 text-warning opacity-50"></i>
+                        <i class="bi bi-list-ul display-6 text-warning opacity-50"></i>
                     </div>
                 </div>
             </div>
@@ -413,8 +413,8 @@ include 'layout.php';
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title text-info">Ce Mois</h5>
-                        <h2 class="text-info"><?php echo htmlspecialchars(number_format($stats['paiements_mois'], 0, ',', ' ')); ?> Kwz</h2>
-                        <p class="card-text">
+                        <h4 class="text-info"><?php echo htmlspecialchars(number_format($stats['paiements_mois'], 0, ',', ' ')); ?> Kwz</h4>
+                        <p class="card-text h6 small">
                             <?php 
                             if (!empty($filtre_classe)) {
                                 echo 'Mensuels classe';
@@ -430,7 +430,7 @@ include 'layout.php';
                         </p>
                     </div>
                     <div class="align-self-center">
-                        <i class="bi bi-calendar-month display-4 text-info opacity-50"></i>
+                        <i class="bi bi-calendar-month display-6 text-info opacity-50"></i>
                     </div>
                 </div>
             </div>
@@ -509,7 +509,7 @@ include 'layout.php';
                         <?php endforeach; ?>
                     <?php else: ?>
                         <div class="list-group-item text-center text-muted py-4">
-                            <i class="bi bi-credit-card display-4"></i>
+                            <i class="bi bi-credit-card display-6"></i>
                             <p class="mt-2 mb-0">Aucun paiement</p>
                             <?php if (!empty($filtre_classe) || !empty($filtre_annee_scolaire)): ?>
                             <small class="text-muted">Aucun paiement trouvé avec les filtres actuels</small>

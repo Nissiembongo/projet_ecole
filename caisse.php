@@ -155,7 +155,7 @@ if ($_POST && isset($_POST['operation_caisse'])) {
         $mode_operation = $_POST['mode_operation'];
         $description = $_POST['description'];
         $reference = $_POST['reference'];
-        $categorie = $_POST['categorie'];
+        // $categorie = $_POST['categorie'];
         
         // Vérifier le solde pour les retraits
         if ($type_operation == 'retrait') {
@@ -166,8 +166,8 @@ if ($_POST && isset($_POST['operation_caisse'])) {
         }
         
         if (empty($error)) {
-            $query = "INSERT INTO caisse (type_operation, montant, date_operation, mode_operation, description, reference, categorie, utilisateur_id) 
-                      VALUES (:type_operation, :montant, :date_operation, :mode_operation, :description, :reference, :categorie, :utilisateur_id)";
+            $query = "INSERT INTO caisse (type_operation, montant, date_operation, mode_operation, description, reference, utilisateur_id) 
+                      VALUES (:type_operation, :montant, :date_operation, :mode_operation, :description, :reference, :utilisateur_id)";
             $stmt = $db->prepare($query);
             $montant_final = $type_operation == 'retrait' ? -$montant : $montant;
             $stmt->bindParam(':type_operation', $type_operation);
@@ -176,7 +176,6 @@ if ($_POST && isset($_POST['operation_caisse'])) {
             $stmt->bindParam(':mode_operation', $mode_operation);
             $stmt->bindParam(':description', $description);
             $stmt->bindParam(':reference', $reference);
-            $stmt->bindParam(':categorie', $categorie);
             $stmt->bindParam(':utilisateur_id', $_SESSION['user_id']);
             
             if ($stmt->execute()) {
@@ -543,17 +542,7 @@ include 'layout.php';
                                 <option value="mobile">Paiement mobile</option>
                             </select>
                         </div>
-                        <div class="col-12">
-                            <label for="categorie_depot" class="form-label">Catégorie *</label>
-                            <select class="form-select" id="categorie_depot" name="categorie" required>
-                                <option value="">Sélectionner une catégorie</option>
-                                <?php foreach ($categories as $categorie): ?>
-                                    <?php if ($categorie['type'] == 'recette'): ?>
-                                    <option value="<?php echo $categorie['nom']; ?>"><?php echo $categorie['nom']; ?></option>
-                                    <?php endif; ?>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+                        
                         <div class="col-12">
                             <label for="description_depot" class="form-label">Description *</label>
                             <textarea class="form-control" id="description_depot" name="description" 
@@ -611,18 +600,7 @@ include 'layout.php';
                                 <option value="carte">Carte bancaire</option>
                                 <option value="mobile">Paiement mobile</option>
                             </select>
-                        </div>
-                        <div class="col-12">
-                            <label for="categorie_retrait" class="form-label">Catégorie *</label>
-                            <select class="form-select" id="categorie_retrait" name="categorie" required>
-                                <option value="">Sélectionner une catégorie</option>
-                                <?php foreach ($categories as $categorie): ?>
-                                    <?php if ($categorie['type'] == 'depense'): ?>
-                                    <option value="<?php echo $categorie['nom']; ?>"><?php echo $categorie['nom']; ?></option>
-                                    <?php endif; ?>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+                        </div> 
                         <div class="col-12">
                             <label for="description_retrait" class="form-label">Description *</label>
                             <textarea class="form-control" id="description_retrait" name="description" 

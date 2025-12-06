@@ -7,67 +7,124 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 if (!isset($_GET['id'])) {
-    die("ID de paiement non spécifié");
+    die("ID de transaction non spécifié");
 }
 
-$paiement_id = $_GET['id'];
+$transaction_id = $_GET['id'];
 $database = new Database();
 $db = $database->getConnection();
 
-// Récupérer les informations du paiement avec jointure sur la table classe (incluant filière)
-$query = "SELECT p.*, 
-                 e.nom, e.prenom, e.matricule, e.telephone, e.email,
-                 c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
-                 f.type_frais, f.montant as montant_attendu,
-                 u.nom_complet as caissier
-          FROM paiements p 
-          JOIN etudiants e ON p.etudiant_id = e.id 
-          LEFT JOIN classe c ON e.classe_id = c.id 
-          JOIN frais f ON p.frais_id = f.id 
-          LEFT JOIN utilisateurs u ON u.id = :user_id 
-          WHERE p.id = :id";
+// Déterminer si c'est un paiement ou une vente
+$type = $_GET['type'] ?? 'paiement'; // Par défaut paiement
 
-$stmt = $db->prepare($query);
-$stmt->bindParam(':id', $paiement_id);
-$stmt->bindParam(':user_id', $_SESSION['user_id']);
-$stmt->execute();
-$paiement = $stmt->fetch(PDO::FETCH_ASSOC);
+if ($type == 'vente') {
+    // Récupérer les informations de la vente avec jointure sur la table classe (incluant filière)
+    $query = "SELECT v.*, 
+                     e.nom, e.prenom, e.matricule, e.telephone, e.email,
+                     c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
+                     u.nom_complet as caissier
+              FROM ventes v 
+              JOIN etudiants e ON v.etudiant_id = e.id 
+              LEFT JOIN classe c ON e.classe_id = c.id 
+              LEFT JOIN utilisateurs u ON u.id = :user_id 
+              WHERE v.id = :id";
 
-if (!$paiement) {
-    die("Paiement non trouvé");
+    $stmt = $db->prepare($query);
+    $stmt->bindParam(':id', $transaction_id);
+    $stmt->bindParam(':user_id', $_SESSION['user_id']);
+    $stmt->execute();
+    $transaction = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$transaction) {
+        die("Vente non trouvée");
+    }
+    
+    // Récupérer les détails des articles de la vente
+    $query_details = "SELECT dv.*, a.nom as article_nom, a.prix as prix_unitaire
+                      FROM details_ventes dv
+                      JOIN articles a ON dv.article_id = a.id
+                      WHERE dv.vente_id = :vente_id
+                      ORDER BY a.nom";
+    
+    $stmt_details = $db->prepare($query_details);
+    $stmt_details->bindParam(':vente_id', $transaction_id);
+    $stmt_details->execute();
+    $details = $stmt_details->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Préparer le titre et le type
+    $titre = "REÇU DE VENTE";
+    $type_transaction = "Vente de fournitures scolaires";
+    $montant_total = $transaction['montant_total'] ?? 0;
+    $date_transaction = $transaction['date_vente'] ?? date('Y-m-d');
+    $mode_paiement = $transaction['mode_vente'] ?? 'espèces';
+    $reference = $transaction['reference'] ?? '';
+    $statut = $transaction['statut'] ?? 'payé';
+    
+} else {
+    // Récupérer les informations du paiement avec jointure sur la table classe (incluant filière)
+    $query = "SELECT p.*, 
+                     e.nom, e.prenom, e.matricule, e.telephone, e.email,
+                     c.nom as classe_nom, c.niveau as classe_niveau, c.filiere,
+                     f.type_frais, f.montant as montant_attendu,
+                     u.nom_complet as caissier
+              FROM paiements p 
+              JOIN etudiants e ON p.etudiant_id = e.id 
+              LEFT JOIN classe c ON e.classe_id = c.id 
+              JOIN frais f ON p.frais_id = f.id 
+              LEFT JOIN utilisateurs u ON u.id = :user_id 
+              WHERE p.id = :id";
+
+    $stmt = $db->prepare($query);
+    $stmt->bindParam(':id', $transaction_id);
+    $stmt->bindParam(':user_id', $_SESSION['user_id']);
+    $stmt->execute();
+    $transaction = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$transaction) {
+        die("Paiement non trouvé");
+    }
+    
+    // Calculer le reste à payer
+    $reste_a_payer = $transaction['montant_attendu'] - $transaction['montant_paye'];
+    
+    // Préparer le titre et le type
+    $titre = "REÇU DE PAIEMENT";
+    $type_transaction = $transaction['type_frais'] ?? 'Frais scolaire';
+    $montant_total = $transaction['montant_paye'] ?? 0;
+    $date_transaction = $transaction['date_paiement'] ?? date('Y-m-d');
+    $mode_paiement = $transaction['mode_paiement'] ?? 'espèces';
+    $reference = $transaction['reference'] ?? '';
+    $statut = $transaction['statut'] ?? 'payé';
 }
 
 // Si le caissier n'est pas trouvé, utiliser l'utilisateur connecté
-if (empty($paiement['caissier'])) {
+if (empty($transaction['caissier'])) {
     // Récupérer le nom de l'utilisateur connecté
     $query_user = "SELECT nom_complet FROM utilisateurs WHERE id = :user_id";
     $stmt_user = $db->prepare($query_user);
     $stmt_user->bindParam(':user_id', $_SESSION['user_id']);
-$stmt_user->execute();
+    $stmt_user->execute();
     $user = $stmt_user->fetch(PDO::FETCH_ASSOC);
-    $paiement['caissier'] = $user['nom_complet'] ?? 'Caissier';
+    $transaction['caissier'] = $user['nom_complet'] ?? 'Caissier';
 }
-
-// Calculer le reste à payer
-$reste_a_payer = $paiement['montant_attendu'] - $paiement['montant_paye'];
 
 // Construire le nom complet de la classe avec filière
-$classe_complete = $paiement['classe_nom'] ?? 'Non assigné';
-if ($paiement['classe_niveau']) {
-    $classe_complete = $paiement['classe_nom'] . ' (' . $paiement['classe_niveau'];
-    if (!empty($paiement['filiere'])) {
-        $classe_complete .= ' - ' . $paiement['filiere'];
+$classe_complete = $transaction['classe_nom'] ?? 'Non assigné';
+if ($transaction['classe_niveau']) {
+    $classe_complete = $transaction['classe_nom'] . ' (' . $transaction['classe_niveau'];
+    if (!empty($transaction['filiere'])) {
+        $classe_complete .= ' - ' . $transaction['filiere'];
     }
     $classe_complete .= ')';
-} elseif (!empty($paiement['filiere'])) {
-    $classe_complete .= ' (' . $paiement['filiere'] . ')';
+} elseif (!empty($transaction['filiere'])) {
+    $classe_complete .= ' (' . $transaction['filiere'] . ')';
 }
 
-// Chemins des images (à adapter selon votre structure)
-$logo_ecole = "assets/images/logo.png"; // Chemin vers votre logo 
-$filigrane_image = "assets/images/filigrane-ecole.jpg"; // Chemin vers votre image filigrane
+// Chemins des images
+$logo_ecole = "assets/images/logo.png";
+$filigrane_image = "assets/images/filigrane-ecole.jpg";
 
-// Vérifier si les images existent, sinon utiliser des valeurs par défaut
+// Vérifier si les images existent
 $has_logo = file_exists($logo_ecole);
 $has_filigrane = file_exists($filigrane_image);
 ?>
@@ -76,7 +133,7 @@ $has_filigrane = file_exists($filigrane_image);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reçu de Paiement - <?php echo $paiement['matricule']; ?></title>
+    <title><?php echo $titre; ?> - <?php echo $transaction['matricule']; ?></title>
     <style>
         /* Taille A5 - moitié de A4 */
         @page {
@@ -142,7 +199,7 @@ $has_filigrane = file_exists($filigrane_image);
             font-weight: bold;
             margin: 8px 0;
             text-transform: uppercase;
-            color: #e74c3c;
+            color: <?php echo $type == 'vente' ? '#27ae60' : '#e74c3c'; ?>;
         }
         
         .reference-section {
@@ -195,9 +252,33 @@ $has_filigrane = file_exists($filigrane_image);
         .payment-title {
             font-size: 11px;
             margin-top: 0;
-            border-bottom: 1px solid #e74c3c;
+            border-bottom: 1px solid <?php echo $type == 'vente' ? '#27ae60' : '#e74c3c'; ?>;
             padding-bottom: 3px;
             margin-bottom: 6px;
+        }
+        
+        /* Styles spécifiques pour les détails de vente */
+        .vente-details-table {
+            width: 100%;
+            font-size: 9px;
+            border-collapse: collapse;
+            margin: 8px 0;
+        }
+        
+        .vente-details-table th {
+            background: #f1f1f1;
+            padding: 3px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .vente-details-table td {
+            padding: 3px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .vente-details-table .text-end {
+            text-align: right;
         }
         
         .amount-in-words {
@@ -381,6 +462,15 @@ $has_filigrane = file_exists($filigrane_image);
             font-size: 8px;
             margin-left: 3px;
         }
+        
+        .transaction-type-badge {
+            background: <?php echo $type == 'vente' ? '#27ae60' : '#e74c3c'; ?>;
+            color: white;
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-size: 8px;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -405,8 +495,10 @@ $has_filigrane = file_exists($filigrane_image);
     <div class="receipt-container">
         <!-- En-tête avec logo -->
         <div class="header">
-            <div class="logo-container"> 
-                <img src="assets/images/logo.png" alt="Logo École" class="logo">
+            <div class="logo-container">
+                <?php if ($has_logo): ?>
+                <img src="<?php echo $logo_ecole; ?>" alt="Logo École" class="logo">
+                <?php endif; ?>
             </div>
             
             <div class="school-name">COMPLEXE SCOLAIRE PRIVÉ FRANCOPHONE LES BAMBINS SAGES</div>
@@ -414,21 +506,32 @@ $has_filigrane = file_exists($filigrane_image);
                 LUANDA - ANGOLA - Tél: +244 92 99 46 399 / 92 65 93 551<br>
                 Email: bambins.sages@gmail.com
             </div>
-            <div class="receipt-title">REÇU DE PAIEMENT</div>
+            <div class="receipt-title"><?php echo $titre; ?></div>
         </div>
 
         <!-- Informations de référence -->
         <div class="reference-section">
             <div>
                 <strong>Référence:</strong> 
-                <span class="reference-code"><?php echo sprintf('PAY%06d', $paiement['id']); ?></span>
+                <span class="reference-code">
+                    <?php 
+                    if ($type == 'vente') {
+                        echo sprintf('VEN%06d', $transaction_id);
+                    } else {
+                        echo sprintf('PAY%06d', $transaction_id);
+                    }
+                    ?>
+                </span>
+                <span class="transaction-type-badge">
+                    <?php echo $type == 'vente' ? 'VENTE' : 'PAIEMENT'; ?>
+                </span>
             </div>
             <div>
-                <strong>Date:</strong> <?php echo date('d/m/Y à H:i', strtotime($paiement['date_paiement'])); ?>
+                <strong>Date:</strong> <?php echo date('d/m/Y à H:i', strtotime($date_transaction)); ?>
             </div>
             <div>
                 <strong>Statut:</strong> 
-                <span class="status-badge status-paid">PAYÉ</span>
+                <span class="status-badge status-paid"><?php echo strtoupper($statut); ?></span>
             </div>
         </div>
 
@@ -437,89 +540,163 @@ $has_filigrane = file_exists($filigrane_image);
             <div class="section-title">Informations de l'Élève</div>
             <div class="info-row">
                 <div class="info-label">Matricule:</div>
-                <div class="info-value"><?php echo htmlspecialchars($paiement['matricule']); ?></div>
+                <div class="info-value"><?php echo htmlspecialchars($transaction['matricule']); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Nom et Prénom:</div>
-                <div class="info-value"><?php echo htmlspecialchars($paiement['nom'] . ' ' . $paiement['prenom']); ?></div>
+                <div class="info-value"><?php echo htmlspecialchars($transaction['nom'] . ' ' . $transaction['prenom']); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Classe:</div>
                 <div class="info-value">
-                    <span class="classe-badge"><?php echo htmlspecialchars($paiement['classe_nom'] ?? 'Non assigné'); ?></span>
-                    <?php if ($paiement['classe_niveau']): ?>
-                    <small class="text-muted">(Niveau: <?php echo htmlspecialchars($paiement['classe_niveau']); ?>)</small>
+                    <span class="classe-badge"><?php echo htmlspecialchars($transaction['classe_nom'] ?? 'Non assigné'); ?></span>
+                    <?php if ($transaction['classe_niveau']): ?>
+                    <small class="text-muted">(Niveau: <?php echo htmlspecialchars($transaction['classe_niveau']); ?>)</small>
                     <?php endif; ?>
-                    <?php if (!empty($paiement['filiere'])): ?>
-                    <span class="filiere-badge"><?php echo htmlspecialchars($paiement['filiere']); ?></span>
+                    <?php if (!empty($transaction['filiere'])): ?>
+                    <span class="filiere-badge"><?php echo htmlspecialchars($transaction['filiere']); ?></span>
                     <?php endif; ?>
                 </div>
             </div>
-            <?php if (!empty($paiement['telephone'])): ?>
+            <?php if (!empty($transaction['telephone'])): ?>
             <div class="info-row">
                 <div class="info-label">Téléphone:</div>
-                <div class="info-value"><?php echo htmlspecialchars($paiement['telephone']); ?></div>
+                <div class="info-value"><?php echo htmlspecialchars($transaction['telephone']); ?></div>
             </div>
             <?php endif; ?>
-            <?php if (!empty($paiement['email'])): ?>
+            <?php if (!empty($transaction['email'])): ?>
             <div class="info-row">
                 <div class="info-label">Email:</div>
-                <div class="info-value"><?php echo htmlspecialchars($paiement['email']); ?></div>
+                <div class="info-value"><?php echo htmlspecialchars($transaction['email']); ?></div>
             </div>
             <?php endif; ?>
         </div>
 
-        <!-- Détails du paiement -->
+        <!-- Détails de la transaction -->
         <div class="payment-details">
-            <div class="payment-title">Détails du Paiement</div>
-            <div class="info-row">
-                <div class="info-label">Type de Frais:</div>
-                <div class="info-value"><strong><?php echo htmlspecialchars($paiement['type_frais']); ?></strong></div>
+            <div class="payment-title">
+                <?php echo $type == 'vente' ? 'Détails de la Vente' : 'Détails du Paiement'; ?>
             </div>
+            
+            <?php if ($type == 'vente'): ?>
+                <!-- Détails des articles vendus -->
+                <?php if (!empty($details)): ?>
+                <div class="info-row">
+                    <div class="info-label">Nombre d'articles:</div>
+                    <div class="info-value"><strong><?php echo count($details); ?> article(s)</strong></div>
+                </div>
+                
+                <table class="vente-details-table">
+                    <thead>
+                        <tr>
+                            <th>Article</th>
+                            <th class="text-end">Qté</th>
+                            <th class="text-end">Prix unitaire</th>
+                            <th class="text-end">Sous-total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php 
+                        $total_quantite = 0;
+                        foreach ($details as $detail): 
+                            $total_quantite += $detail['quantite'];
+                        ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($detail['article_nom']); ?></td>
+                            <td class="text-end"><?php echo $detail['quantite']; ?></td>
+                            <td class="text-end"><?php echo number_format($detail['prix_unitaire'], 0, ',', ' '); ?> Kwz</td>
+                            <td class="text-end"><?php echo number_format($detail['sous_total'], 0, ',', ' '); ?> Kwz</td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight: bold; background: #f1f1f1;">
+                            <td>Total</td>
+                            <td class="text-end"><?php echo $total_quantite; ?></td>
+                            <td colspan="2" class="text-end">
+                                <?php echo number_format($montant_total, 0, ',', ' '); ?> Kwz
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <?php else: ?>
+                <div class="info-row">
+                    <div class="info-value text-center" style="padding: 10px; color: #666;">
+                        Aucun détail d'article disponible
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+            <?php else: ?>
+                <!-- Détails du paiement -->
+                <div class="info-row">
+                    <div class="info-label">Type de Frais:</div>
+                    <div class="info-value"><strong><?php echo htmlspecialchars($type_transaction); ?></strong></div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Montant Attendu:</div>
+                    <div class="info-value"><?php echo number_format($transaction['montant_attendu'], 0, ',', ' '); ?> Kwz</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Montant Payé:</div>
+                    <div class="info-value">
+                        <span class="montant-principal"><?php echo number_format($montant_total, 0, ',', ' '); ?> Kwz</span>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Reste à Payer:</div>
+                    <div class="info-value">
+                        <span class="montant-reste <?php 
+                            echo $reste_a_payer > 0 ? 'reste-positif' : 
+                                 ($reste_a_payer < 0 ? 'reste-negatif' : 'reste-nul'); 
+                        ?>">
+                            <?php echo number_format($reste_a_payer, 0, ',', ' '); ?> Kwz
+                            <?php if ($reste_a_payer == 0): ?>
+                            <span>(Solde réglé)</span>
+                            <?php elseif ($reste_a_payer > 0): ?>
+                            <span>(Reste à régler)</span>
+                            <?php else: ?>
+                            <span>(Excédent payé)</span>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                </div>
+            <?php endif; ?>
+            
             <div class="info-row">
-                <div class="info-label">Montant Attendu:</div>
-                <div class="info-value"><?php echo number_format($paiement['montant_attendu'], 0, ',', ' '); ?> Kwz</div>
-            </div>
-            <div class="info-row">
-                <div class="info-label">Montant Payé:</div>
+                <div class="info-label">Montant Total:</div>
                 <div class="info-value">
-                    <span class="montant-principal"><?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> Kwz</span>
+                    <span class="montant-principal"><?php echo number_format($montant_total, 0, ',', ' '); ?> Kwz</span>
                 </div>
             </div>
-            <div class="info-row">
-                <div class="info-label">Reste à Payer:</div>
-                <div class="info-value">
-                    <span class="montant-reste <?php 
-                        echo $reste_a_payer > 0 ? 'reste-positif' : 
-                             ($reste_a_payer < 0 ? 'reste-negatif' : 'reste-nul'); 
-                    ?>">
-                        <?php echo number_format($reste_a_payer, 0, ',', ' '); ?> Kwz
-                        <?php if ($reste_a_payer == 0): ?>
-                        <span>(Solde réglé)</span>
-                        <?php elseif ($reste_a_payer > 0): ?>
-                        <span>(Reste à régler)</span>
-                        <?php else: ?>
-                        <span>(Excédent payé)</span>
-                        <?php endif; ?>
-                    </span>
-                </div>
-            </div>
+            
             <div class="info-row">
                 <div class="info-label">Mode de Paiement:</div>
                 <div class="info-value">
-                    <span class="mode-badge"><?php echo htmlspecialchars($paiement['mode_paiement']); ?></span>
+                    <span class="mode-badge"><?php echo htmlspecialchars($mode_paiement); ?></span>
                 </div>
             </div>
-            <?php if (!empty($paiement['reference'])): ?>
+            
+            <?php if (!empty($reference)): ?>
             <div class="info-row">
                 <div class="info-label">Référence:</div>
                 <div class="info-value">
-                    <span class="reference-code"><?php echo htmlspecialchars($paiement['reference']); ?></span>
+                    <span class="reference-code"><?php echo htmlspecialchars($reference); ?></span>
                 </div>
             </div>
             <?php endif; ?>
+            
             <div class="info-row">
-                <div class="info-label">Description Classe:</div>
+                <div class="info-label">Description:</div>
+                <div class="info-value">
+                    <small class="text-muted">
+                        <?php echo htmlspecialchars($type_transaction); ?>
+                    </small>
+                </div>
+            </div>
+            
+            <div class="info-row">
+                <div class="info-label">Classe:</div>
                 <div class="info-value">
                     <small class="text-muted">
                         <?php echo htmlspecialchars($classe_complete); ?>
@@ -531,7 +708,7 @@ $has_filigrane = file_exists($filigrane_image);
         <!-- Montant en lettres -->
         <div class="amount-in-words">
             <strong>Arrêté la présente quittance à la somme de :</strong><br>
-            « <?php echo convertirMontantEnLettres($paiement['montant_paye']); ?> Kwanza angola »
+            « <?php echo convertirMontantEnLettres($montant_total); ?> Kwanza angola »
         </div>
 
         <!-- Section signatures -->
@@ -547,7 +724,7 @@ $has_filigrane = file_exists($filigrane_image);
                 <div style="margin-bottom: 10px; font-weight: bold;">Pour l'École, Le Caissier</div>
                 <div class="signature-line"></div>
                 <div style="margin-top: 5px; font-size: 9px;">
-                    <?php echo htmlspecialchars($paiement['caissier']); ?><br>
+                    <?php echo htmlspecialchars($transaction['caissier']); ?><br>
                     Cachet et signature
                 </div>
             </div>
@@ -555,14 +732,21 @@ $has_filigrane = file_exists($filigrane_image);
 
         <!-- Pied de page -->
         <div class="footer">
-            <div><strong>Ce reçu est généré automatiquement et fait foi de paiement</strong></div>
+            <div><strong>Ce reçu est généré automatiquement et fait foi de transaction</strong></div>
             <div style="margin: 8px 0; font-size: 9px;">
                 Conservez précieusement ce reçu pour toute réclamation ou justificatif<br>
                 <small>Classe: <?php echo htmlspecialchars($classe_complete); ?></small>
             </div>
             <div style="font-size: 8px; color: #95a5a6;">
-                Reçu N°: <?php echo sprintf('REC%06d', $paiement['id']); ?> | 
-                Paiement N°: <?php echo sprintf('PAY%06d', $paiement['id']); ?> |
+                <?php 
+                if ($type == 'vente') {
+                    echo 'Vente N°: ' . sprintf('VEN%06d', $transaction_id) . ' | ';
+                    echo 'Reçu N°: ' . sprintf('REC-V%06d', $transaction_id) . ' | ';
+                } else {
+                    echo 'Paiement N°: ' . sprintf('PAY%06d', $transaction_id) . ' | ';
+                    echo 'Reçu N°: ' . sprintf('REC-P%06d', $transaction_id) . ' | ';
+                }
+                ?>
                 Généré le: <?php echo date('d/m/Y à H:i'); ?>
             </div>
         </div>

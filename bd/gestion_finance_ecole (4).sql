@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Hôte : 127.0.0.1
--- Généré le : ven. 28 nov. 2025 à 18:13
+-- Généré le : jeu. 04 déc. 2025 à 10:45
 -- Version du serveur : 10.4.32-MariaDB
 -- Version de PHP : 8.2.12
 
@@ -49,11 +49,11 @@ CREATE TABLE `audit_log` (
 INSERT INTO `audit_log` (`id`, `timestamp`, `niveau`, `utilisateur_id`, `message`, `ip_address`, `user_agent`, `module`, `action`, `entite_id`, `entite_type`, `created_at`) VALUES
 (1, '2025-11-28 17:56:26', 'INFO', 1, 'Connexion réussie de l\'administrateur', '192.168.1.100', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'auth', 'login', 1, 'utilisateur', '2025-11-28 16:56:26'),
 (2, '2025-11-28 17:56:26', 'SECURITY', 1, 'Nouvel utilisateur créé: caissier1', '192.168.1.100', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'users', 'create', 2, 'utilisateur', '2025-11-28 16:56:26'),
-(3, '2025-11-28 17:56:26', 'INFO', 2, 'Connexion réussie du caissier', '192.168.1.101', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36', 'auth', 'login', 2, 'utilisateur', '2025-11-28 16:56:26'),
+(3, '2025-11-28 17:56:26', 'INFO', NULL, 'Connexion réussie du caissier', '192.168.1.101', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36', 'auth', 'login', 2, 'utilisateur', '2025-11-28 16:56:26'),
 (4, '2025-11-28 17:56:26', 'WARNING', NULL, 'Tentative de connexion échouée pour utilisateur: unknown', '192.168.1.105', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'auth', 'login_failed', NULL, 'utilisateur', '2025-11-28 16:56:26'),
 (5, '2025-11-28 17:56:26', 'INFO', 1, 'Déconnexion utilisateur', '192.168.1.100', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'auth', 'logout', 1, 'utilisateur', '2025-11-28 16:56:26'),
 (6, '2025-11-28 17:56:26', 'INFO', 1, 'Nouvel étudiant ajouté: MAT2024001', '192.168.1.100', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'etudiants', 'create', 1, 'etudiant', '2025-11-28 16:56:26'),
-(7, '2025-11-28 17:56:26', 'INFO', 2, 'Paiement enregistré pour l\'étudiant MAT2024001', '192.168.1.101', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36', 'paiements', 'create', 1, 'paiement', '2025-11-28 16:56:26'),
+(7, '2025-11-28 17:56:26', 'INFO', NULL, 'Paiement enregistré pour l\'étudiant MAT2024001', '192.168.1.101', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36', 'paiements', 'create', 1, 'paiement', '2025-11-28 16:56:26'),
 (8, '2025-11-28 17:56:26', 'ERROR', 1, 'Erreur lors de la suppression de l\'étudiant: contraintes de clé étrangère', '192.168.1.100', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', 'etudiants', 'delete', 3, 'etudiant', '2025-11-28 16:56:26');
 
 -- --------------------------------------------------------
@@ -82,7 +82,15 @@ CREATE TABLE `caisse` (
 --
 
 INSERT INTO `caisse` (`id`, `type_operation`, `montant`, `date_operation`, `mode_operation`, `description`, `reference`, `utilisateur_id`, `date_creation`, `categorie`, `statut`, `paiement_id`) VALUES
-(1, 'dépôt', 500.00, '2025-11-28 00:00:00', 'espèces', 'Paiement Frais d\'inscription - EMBONGO BONKANGU Nissi (MAT2025053) - 1 ère A (Niv. Humanitaire)', 'REF0015', 2, '2025-11-28 16:10:28', '', 'validé', 1);
+(1, 'dépôt', 400.00, '2025-12-02 00:00:00', 'espèces', 'Paiement Frais d\'inscription - EMBONGO BONKANGU Nissi (MAT2025053) - 1 ère A (Niv. Humanitaire)', 'REF002', 1, '2025-12-02 08:54:11', '', 'validé', 1),
+(2, 'dépôt', 100.00, '2025-12-02 00:00:00', 'espèces', 'Paiement Frais d\'inscription - EMBONGO BONKANGU Nissi (MAT2025053) - 1 ère A (Niv. Humanitaire)', 'REF0013', 1, '2025-12-02 08:55:05', '', 'validé', 2),
+(3, 'dépôt', 100.00, '2025-12-02 00:00:00', 'espèces', 'Paiement Frais d\'inscription - EMBONGO BONKANGU Nissi (MAT2025053) - 1 ère A (Niv. Humanitaire)', 'REF0013', 1, '2025-12-02 08:57:29', '', 'validé', 3),
+(4, 'dépôt', 700.00, '2025-12-02 00:00:00', 'espèces', 'Paiement Frais scolaire - EMBONGO BONKANGU Nissi (MAT2025053) - 1 ère A (Niv. Humanitaire)', '', 1, '2025-12-02 09:01:22', 'scolarité', 'validé', 4),
+(5, 'dépôt', 200.00, '2025-12-02 00:00:00', 'espèces', 'Paiement Frais scolaire - EMBONGO BONKANGU Nissi (MAT2025053) - 1 ère A (Niv. Humanitaire)', '', 1, '2025-12-02 09:01:50', 'scolarité', 'validé', 5),
+(6, 'dépôt', 100.00, '2025-12-02 00:00:00', 'espèces', 'Paiement Frais scolaire - EMBONGO BONKANGU Nissi (MAT2025053) - 1 ère A (Niv. Humanitaire)', '', 1, '2025-12-02 09:02:11', 'scolarité', 'validé', 6),
+(7, 'dépôt', 500.00, '2025-12-02 00:00:00', 'espèces', 'Paiement Frais d\'inscription - KANANGILA JEPTHE (MAT2025325) - 1 ère A (Niv. Humanitaire)', '', 1, '2025-12-02 09:46:45', '', 'validé', 7),
+(8, 'dépôt', 100.00, '2025-12-04 00:00:00', 'espèces', 'Paiement Frais scolaire - KANANGILA JEPTHE (MAT2025325) - 1 ère A (Niv. Humanitaire - Filière: Scientifique)', '', 1, '2025-12-04 09:36:35', 'scolarité', 'validé', 8),
+(9, 'dépôt', 100.00, '2025-12-04 00:00:00', 'espèces', 'Paiement Frais scolaire - KANANGILA JEPTHE (MAT2025325) - 1 ère A (Niv. Humanitaire - Filière: Scientifique)', '', 1, '2025-12-04 09:41:43', 'scolarité', 'validé', 9);
 
 -- --------------------------------------------------------
 
@@ -121,7 +129,8 @@ CREATE TABLE `classe` (
 --
 
 INSERT INTO `classe` (`id`, `nom`, `niveau`, `filiere`, `capacite_max`, `annee_scolaire`, `created_at`, `updated_at`) VALUES
-(1, '1 ère A', 'Humanitaire', 'Scientifique', 100, '2025-2026', '2025-11-28 16:08:51', '2025-11-28 16:08:51');
+(1, '1 ère A', 'Humanitaire', 'Scientifique', 100, '2025-2026', '2025-11-28 16:08:51', '2025-11-28 16:08:51'),
+(5, '1 ère A', 'Primaire', 'Pédagogie générale', 30, '2025-2026', '2025-12-02 11:12:15', '2025-12-03 13:02:16');
 
 -- --------------------------------------------------------
 
@@ -146,7 +155,8 @@ CREATE TABLE `etudiants` (
 --
 
 INSERT INTO `etudiants` (`id`, `matricule`, `nom`, `prenom`, `telephone`, `email`, `classe`, `date_inscription`, `classe_id`) VALUES
-(1, 'MAT2025053', 'EMBONGO BONKANGU', 'Nissi', '+243812796152', 'nissiembongo06@gmail.com', '', '2025-11-28', 1);
+(1, 'MAT2025053', 'EMBONGO BONKANGU', 'Nissi', '+243812796152', 'nissiembongo06@gmail.com', '', '2025-11-28', 1),
+(2, 'MAT2025325', 'KANANGILA', 'JEPTHE', '+243812796152', 'jephthekanangila@gmail.com', '', '2025-11-29', 1);
 
 -- --------------------------------------------------------
 
@@ -167,7 +177,8 @@ CREATE TABLE `frais` (
 --
 
 INSERT INTO `frais` (`id`, `type_frais`, `montant`, `description`, `annee_scolaire`) VALUES
-(1, 'Frais d\'inscription', 500.00, 'Frais lié à la scolarité', '2025-2026');
+(1, 'Frais d\'inscription', 500.00, 'Frais lié à la scolarité', '2025-2026'),
+(2, 'Frais scolaire', 1000.00, 'Frais scolaires', '2025-2026');
 
 -- --------------------------------------------------------
 
@@ -184,15 +195,24 @@ CREATE TABLE `paiements` (
   `mode_paiement` enum('espèces','chèque','virement','carte') NOT NULL,
   `reference` varchar(100) DEFAULT NULL,
   `statut` enum('payé','en attente','annulé') DEFAULT 'payé',
-  `operation_caisse_id` int(11) DEFAULT NULL
+  `operation_caisse_id` int(11) DEFAULT NULL,
+  `montant_total_paye` double NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Déchargement des données de la table `paiements`
 --
 
-INSERT INTO `paiements` (`id`, `etudiant_id`, `frais_id`, `montant_paye`, `date_paiement`, `mode_paiement`, `reference`, `statut`, `operation_caisse_id`) VALUES
-(1, 1, 1, 500.00, '2025-11-28', 'espèces', 'REF0015', 'payé', 1);
+INSERT INTO `paiements` (`id`, `etudiant_id`, `frais_id`, `montant_paye`, `date_paiement`, `mode_paiement`, `reference`, `statut`, `operation_caisse_id`, `montant_total_paye`) VALUES
+(1, 1, 1, 400.00, '2025-12-02', 'espèces', 'REF002', 'payé', 1, 400),
+(2, 1, 1, 100.00, '2025-12-02', 'espèces', 'REF0013', 'payé', 2, 500),
+(3, 1, 1, 100.00, '2025-12-02', 'espèces', 'REF0013', 'payé', 3, 600),
+(4, 1, 2, 700.00, '2025-12-02', 'espèces', '', 'payé', 4, 700),
+(5, 1, 2, 200.00, '2025-12-02', 'espèces', '', 'payé', 5, 900),
+(6, 1, 2, 100.00, '2025-12-02', 'espèces', '', 'payé', 6, 1000),
+(7, 2, 1, 500.00, '2025-12-02', 'espèces', '', 'payé', 7, 500),
+(8, 2, 2, 100.00, '2025-12-04', 'espèces', '', 'payé', 8, 100),
+(9, 2, 2, 100.00, '2025-12-04', 'espèces', '', 'payé', 9, 200);
 
 -- --------------------------------------------------------
 
@@ -218,7 +238,8 @@ CREATE TABLE `solde_caisse` (
 --
 
 INSERT INTO `solde_caisse` (`id`, `date_solde`, `solde_ouverture`, `solde_fermeture`, `total_depots`, `total_retraits`, `nombre_operations`, `statut`, `utilisateur_id`, `notes`) VALUES
-(1, '2025-11-28', 0.00, 0.00, 0.00, 0.00, 0, 'ouvert', 2, NULL);
+(1, '2025-12-02', 0.00, 0.00, 2100.00, 0.00, 7, 'ouvert', 1, NULL),
+(2, '2025-12-03', 0.00, 0.00, 0.00, 0.00, 0, 'ouvert', 1, NULL);
 
 -- --------------------------------------------------------
 
@@ -259,16 +280,18 @@ CREATE TABLE `utilisateurs` (
   `nom_complet` varchar(100) NOT NULL,
   `role` enum('admin','caissier') DEFAULT 'caissier',
   `statut` varchar(15) NOT NULL,
-  `derniere_connexion` datetime DEFAULT NULL
+  `derniere_connexion` datetime DEFAULT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `created_at` date DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Déchargement des données de la table `utilisateurs`
 --
 
-INSERT INTO `utilisateurs` (`id`, `username`, `password`, `nom_complet`, `role`, `statut`, `derniere_connexion`) VALUES
-(1, 'admin', '$2y$10$V5t.7GnVl3XDlNPe05Z67OTL1r/Q/U7gb29bvAc77uGIvdm76ihQW', 'Administrateur Principal', 'admin', 'actif', '2025-11-28 18:12:05'),
-(2, 'Nissi', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Nissi Embongo', 'admin', 'actif', '2025-11-28 17:23:22');
+INSERT INTO `utilisateurs` (`id`, `username`, `password`, `nom_complet`, `role`, `statut`, `derniere_connexion`, `email`, `created_at`) VALUES
+(1, 'admin', '$2y$10$V5t.7GnVl3XDlNPe05Z67OTL1r/Q/U7gb29bvAc77uGIvdm76ihQW', 'Administrateur Principal', 'admin', 'actif', '2025-12-04 10:29:32', 'admin@gmai.com', '2025-12-01'),
+(4, 'Nissi', '$2y$10$iBd4kRstLi5eT8gd3.dZNO9nSK7S6dMXREMNOKbfDXVaz7Vnhr1cC', 'Nissi EMBONGO BONKANGU', 'caissier', 'actif', NULL, 'nissiembongo06@gmail.com', '2025-12-04');
 
 --
 -- Index pour les tables déchargées
@@ -306,8 +329,7 @@ ALTER TABLE `categories_caisse`
 -- Index pour la table `classe`
 --
 ALTER TABLE `classe`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `nom` (`nom`);
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Index pour la table `etudiants`
@@ -328,9 +350,9 @@ ALTER TABLE `frais`
 --
 ALTER TABLE `paiements`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `etudiant_id` (`etudiant_id`),
-  ADD KEY `frais_id` (`frais_id`),
-  ADD KEY `operation_caisse_id` (`operation_caisse_id`);
+  ADD KEY `operation_caisse_id` (`operation_caisse_id`),
+  ADD KEY `fk_paiements_etudiants` (`etudiant_id`),
+  ADD KEY `fk_paiements_frais` (`frais_id`);
 
 --
 -- Index pour la table `solde_caisse`
@@ -374,7 +396,7 @@ ALTER TABLE `audit_log`
 -- AUTO_INCREMENT pour la table `caisse`
 --
 ALTER TABLE `caisse`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT pour la table `categories_caisse`
@@ -386,31 +408,31 @@ ALTER TABLE `categories_caisse`
 -- AUTO_INCREMENT pour la table `classe`
 --
 ALTER TABLE `classe`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT pour la table `etudiants`
 --
 ALTER TABLE `etudiants`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT pour la table `frais`
 --
 ALTER TABLE `frais`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `paiements`
 --
 ALTER TABLE `paiements`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT pour la table `solde_caisse`
 --
 ALTER TABLE `solde_caisse`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT pour la table `sorties`
@@ -428,7 +450,7 @@ ALTER TABLE `type_frais`
 -- AUTO_INCREMENT pour la table `utilisateurs`
 --
 ALTER TABLE `utilisateurs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- Contraintes pour les tables déchargées
@@ -457,8 +479,8 @@ ALTER TABLE `etudiants`
 -- Contraintes pour la table `paiements`
 --
 ALTER TABLE `paiements`
-  ADD CONSTRAINT `paiements_ibfk_1` FOREIGN KEY (`etudiant_id`) REFERENCES `etudiants` (`id`),
-  ADD CONSTRAINT `paiements_ibfk_2` FOREIGN KEY (`frais_id`) REFERENCES `frais` (`id`),
+  ADD CONSTRAINT `fk_paiements_etudiants` FOREIGN KEY (`etudiant_id`) REFERENCES `etudiants` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `fk_paiements_frais` FOREIGN KEY (`frais_id`) REFERENCES `frais` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `paiements_ibfk_3` FOREIGN KEY (`operation_caisse_id`) REFERENCES `caisse` (`id`);
 
 --

@@ -11,20 +11,234 @@ $db = $database->getConnection();
 
 $success = $error = '';
 
-// Fonction pour mettre à jour le solde du jour
 function mettreAJourSoldeJour($db, $date_solde = null) {
     if (!$date_solde) {
         $date_solde = date('Y-m-d');
     }
     
-    $query = "UPDATE solde_caisse sc 
-              SET total_depots = (SELECT COALESCE(SUM(montant), 0) FROM caisse WHERE DATE(date_operation) = sc.date_solde AND montant > 0 AND statut = 'validé'),
-                  total_retraits = (SELECT COALESCE(SUM(ABS(montant)), 0) FROM caisse WHERE DATE(date_operation) = sc.date_solde AND montant < 0 AND statut = 'validé'),
-                  nombre_operations = (SELECT COUNT(*) FROM caisse WHERE DATE(date_operation) = sc.date_solde AND statut = 'validé')
-              WHERE sc.date_solde = :date_solde";
-    $stmt = $db->prepare($query);
-    $stmt->bindParam(':date_solde', $date_solde);
-    $stmt->execute();
+    try {
+        // Vérifier si la table solde_caisse existe
+        $query_check = "SHOW TABLES LIKE 'solde_caisse'";
+        $stmt_check = $db->prepare($query_check);
+        $stmt_check->execute();
+        
+        if ($stmt_check->rowCount() > 0) {
+            // Table existe, mettre à jour
+            $query = "UPDATE solde_caisse sc 
+                      SET total_depots = (SELECT COALESCE(SUM(montant), 0) FROM caisse WHERE DATE(date_operation) = sc.date_solde AND montant > 0 AND statut = 'validé'),
+                          total_retraits = (SELECT COALESCE(SUM(ABS(montant)), 0) FROM caisse WHERE DATE(date_operation) = sc.date_solde AND montant < 0 AND statut = 'validé'),
+                          nombre_operations = (SELECT COUNT(*) FROM caisse WHERE DATE(date_operation) = sc.date_solde AND statut = 'validé')
+                      WHERE sc.date_solde = :date_solde";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':date_solde', $date_solde);
+            $stmt->execute();
+        }
+        // Si la table n'existe pas, ne rien faire
+    } catch (Exception $e) {
+        // Ne pas bloquer l'application si le solde ne peut être mis à jour
+        error_log("Erreur mise à jour solde: " . $e->getMessage());
+    }
+}
+
+// Modifier un paiement
+if ($_POST && isset($_POST['modifier_paiement'])) {
+    try {
+        $paiement_id = $_POST['paiement_id'];
+        $frais_id = $_POST['frais_id'];
+        $montant_paye = $_POST['montant_paye'];
+        $date_paiement = $_POST['date_paiement'];
+        $mode_paiement = $_POST['mode_paiement'];
+        $reference = $_POST['reference'];
+        $statut = $_POST['statut'];
+        
+        // Récupérer l'ancien paiement
+        $query_ancien = "SELECT * FROM paiements WHERE id = :id";
+        $stmt_ancien = $db->prepare($query_ancien);
+        $stmt_ancien->bindParam(':id', $paiement_id);
+        $stmt_ancien->execute();
+        $ancien_paiement = $stmt_ancien->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$ancien_paiement) {
+            $error = "Paiement introuvable!";
+        } else {
+            // Commencer une transaction
+            $db->beginTransaction();
+            
+            try {
+                // Étape 1: Mettre à jour le paiement avec le nouveau montant
+                $query_update = "UPDATE paiements SET 
+                    frais_id = :frais_id,
+                    montant_paye = :montant_paye,
+                    date_paiement = :date_paiement,
+                    mode_paiement = :mode_paiement,
+                    reference = :reference,
+                    statut = :statut,
+                    updated_at = NOW()
+                    WHERE id = :id";
+                
+                $stmt_update = $db->prepare($query_update);
+                $stmt_update->bindParam(':frais_id', $frais_id);
+                $stmt_update->bindParam(':montant_paye', $montant_paye);
+                $stmt_update->bindParam(':date_paiement', $date_paiement);
+                $stmt_update->bindParam(':mode_paiement', $mode_paiement);
+                $stmt_update->bindParam(':reference', $reference);
+                $stmt_update->bindParam(':statut', $statut);
+                $stmt_update->bindParam(':id', $paiement_id);
+                $stmt_update->execute();
+                
+                // Étape 2: Recalculer tous les montants_total_paye pour cet étudiant et ce type de frais
+                recalculerMontantsTotauxPourCombinaison($db, $ancien_paiement['etudiant_id'], $frais_id);
+                
+                // Étape 3: Gérer la caisse selon le statut
+                if ($statut == 'payé') {
+                    // Supprimer l'ancienne opération de caisse si elle existe
+                    if ($ancien_paiement['operation_caisse_id']) {
+                        $query_delete_caisse = "DELETE FROM caisse WHERE id = :operation_caisse_id";
+                        $stmt_delete_caisse = $db->prepare($query_delete_caisse);
+                        $stmt_delete_caisse->bindParam(':operation_caisse_id', $ancien_paiement['operation_caisse_id']);
+                        $stmt_delete_caisse->execute();
+                    }
+                    
+                    // Créer une nouvelle opération de caisse
+                    $query_info = "SELECT e.nom, e.prenom, e.matricule, c.nom as classe_nom, c.niveau, c.filiere, f.type_frais 
+                                 FROM etudiants e 
+                                 LEFT JOIN classe c ON e.classe_id = c.id 
+                                 JOIN frais f ON f.id = :frais_id 
+                                 WHERE e.id = :etudiant_id";
+                    $stmt_info = $db->prepare($query_info);
+                    $stmt_info->bindParam(':frais_id', $frais_id);
+                    $stmt_info->bindParam(':etudiant_id', $ancien_paiement['etudiant_id']);
+                    $stmt_info->execute();
+                    $info = $stmt_info->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($info) {
+                        $description = "Paiement " . $info['type_frais'] . " - " . $info['nom'] . " " . $info['prenom'] . 
+                                      " (" . $info['matricule'] . ") - " . $info['classe_nom'];
+                        if (!empty($info['filiere'])) {
+                            $description .= " (" . $info['filiere'] . ")";
+                        }
+                        
+                        $categorie = 'scolarité';
+                        if (strpos(strtolower($info['type_frais']), 'inscription') !== false) {
+                            $categorie = "Frais d'inscription";
+                        } elseif (strpos(strtolower($info['type_frais']), 'divers') !== false) {
+                            $categorie = 'Frais divers';
+                        }
+                        
+                        $query_caisse = "INSERT INTO caisse (type_operation, montant, date_operation, mode_operation, description, reference, categorie, utilisateur_id, paiement_id) 
+                                        VALUES ('dépôt', :montant, :date_operation, :mode_operation, :description, :reference, :categorie, :utilisateur_id, :paiement_id)";
+                        $stmt_caisse = $db->prepare($query_caisse);
+                        $stmt_caisse->bindParam(':montant', $montant_paye);
+                        $stmt_caisse->bindParam(':date_operation', $date_paiement);
+                        $stmt_caisse->bindParam(':mode_operation', $mode_paiement);
+                        $stmt_caisse->bindParam(':description', $description);
+                        $stmt_caisse->bindParam(':reference', $reference);
+                        $stmt_caisse->bindParam(':categorie', $categorie);
+                        $stmt_caisse->bindParam(':utilisateur_id', $_SESSION['user_id']);
+                        $stmt_caisse->bindParam(':paiement_id', $paiement_id);
+                        $stmt_caisse->execute();
+                        
+                        $operation_caisse_id = $db->lastInsertId();
+                        
+                        // Lier le paiement à la nouvelle opération de caisse
+                        $query_lier = "UPDATE paiements SET operation_caisse_id = :operation_caisse_id WHERE id = :paiement_id";
+                        $stmt_lier = $db->prepare($query_lier);
+                        $stmt_lier->bindParam(':operation_caisse_id', $operation_caisse_id);
+                        $stmt_lier->bindParam(':paiement_id', $paiement_id);
+                        $stmt_lier->execute();
+                    }
+                } elseif ($ancien_paiement['statut'] == 'payé' && $statut != 'payé') {
+                    // Si on retire le statut "payé", supprimer l'opération de caisse
+                    if ($ancien_paiement['operation_caisse_id']) {
+                        $query_delete_caisse = "DELETE FROM caisse WHERE id = :operation_caisse_id";
+                        $stmt_delete_caisse = $db->prepare($query_delete_caisse);
+                        $stmt_delete_caisse->bindParam(':operation_caisse_id', $ancien_paiement['operation_caisse_id']);
+                        $stmt_delete_caisse->execute();
+                        
+                        $query_unlink = "UPDATE paiements SET operation_caisse_id = NULL WHERE id = :paiement_id";
+                        $stmt_unlink = $db->prepare($query_unlink);
+                        $stmt_unlink->bindParam(':paiement_id', $paiement_id);
+                        $stmt_unlink->execute();
+                    }
+                }
+                
+                // Étape 4: Mettre à jour le solde du jour
+                if (function_exists('mettreAJourSoldeJour')) {
+                    mettreAJourSoldeJour($db, $date_paiement);
+                    if ($ancien_paiement['date_paiement'] != $date_paiement) {
+                        mettreAJourSoldeJour($db, $ancien_paiement['date_paiement']);
+                    }
+                }
+                
+                $db->commit();
+                $success = "Paiement modifié avec succès! Les montants cumulés ont été recalculés.";
+                
+            } catch (Exception $e) {
+                $db->rollBack();
+                throw $e;
+            }
+        }
+    } catch (PDOException $e) {
+        $error = "Erreur: " . $e->getMessage();
+    }
+}
+// Fonction pour recalculer les montants totaux pour une combinaison étudiant/frais
+function recalculerMontantsTotauxPourCombinaison($db, $etudiant_id, $frais_id) {
+    try {
+        // Récupérer tous les paiements pour cette combinaison, triés par date
+        $query_paiements = "SELECT id, montant_paye 
+                           FROM paiements 
+                           WHERE etudiant_id = :etudiant_id 
+                           AND frais_id = :frais_id 
+                           AND statut != 'annulé'
+                           ORDER BY date_paiement ASC, id ASC";
+        $stmt_paiements = $db->prepare($query_paiements);
+        $stmt_paiements->bindParam(':etudiant_id', $etudiant_id);
+        $stmt_paiements->bindParam(':frais_id', $frais_id);
+        $stmt_paiements->execute();
+        $paiements = $stmt_paiements->fetchAll(PDO::FETCH_ASSOC);
+        
+        $cumul = 0;
+        foreach ($paiements as $paiement) {
+            $cumul += floatval($paiement['montant_paye']);
+            
+            // Mettre à jour le montant_total_paye pour ce paiement
+            $query_update = "UPDATE paiements 
+                            SET montant_total_paye = :montant_total 
+                            WHERE id = :paiement_id";
+            $stmt_update = $db->prepare($query_update);
+            $stmt_update->bindParam(':montant_total', $cumul);
+            $stmt_update->bindParam(':paiement_id', $paiement['id']);
+            $stmt_update->execute();
+        }
+        
+        return true;
+    } catch (Exception $e) {
+        error_log("Erreur recalcul montants pour étudiant $etudiant_id, frais $frais_id: " . $e->getMessage());
+        return false;
+    }
+}
+// Fonction pour recalculer TOUS les montants totaux (à utiliser une fois pour corriger les données)
+function recalculerTousLesMontantsTotaux($db) {
+    try {
+        // Récupérer toutes les combinaisons uniques étudiant/frais
+        $query_combinaisons = "SELECT DISTINCT etudiant_id, frais_id FROM paiements WHERE statut != 'annulé'";
+        $stmt_combinaisons = $db->prepare($query_combinaisons);
+        $stmt_combinaisons->execute();
+        $combinaisons = $stmt_combinaisons->fetchAll(PDO::FETCH_ASSOC);
+        
+        $total_corrige = 0;
+        foreach ($combinaisons as $combinaison) {
+            if (recalculerMontantsTotauxPourCombinaison($db, $combinaison['etudiant_id'], $combinaison['frais_id'])) {
+                $total_corrige++;
+            }
+        }
+        
+        return $total_corrige;
+    } catch (Exception $e) {
+        error_log("Erreur recalcul tous montants: " . $e->getMessage());
+        return false;
+    }
 }
 
 // Récupérer la liste des classes avec filière
@@ -832,6 +1046,13 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
                                                     <i class="bi bi-check-circle"></i>
                                                 </a>
                                                 <?php endif; ?> 
+                                                <button class="btn btn-warning" 
+                                                        data-bs-toggle="modal" 
+                                                        data-bs-target="#modifierPaiementModal"
+                                                        onclick="chargerDonneesPaiement(<?php echo htmlspecialchars(json_encode($paiement)); ?>)"
+                                                        data-bs-toggle="tooltip" title="Modifier">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
                                                 <button class="btn btn-info" data-bs-toggle="tooltip" title="Imprimer le reçu"
                                                         onclick="genererRecu(<?php echo $paiement['id']; ?>)">
                                                     <i class="bi bi-receipt"></i>
@@ -1030,8 +1251,75 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
         </div>
     </div>
 </div>
-
-    <script src="assets/bootstrap-5.1.3-dist/js/bootstrap.bundle.min.js"></script>
+<!-- Modal Modifier Paiement - CORRECTION DU NOM -->
+<div class="modal fade" id="modifierPaiementModal" tabindex="-1"> <!-- Changé ici -->
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Modifier le Paiement</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <input type="hidden" id="modifier_paiement_id" name="paiement_id"> <!-- Changé ici -->
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="modifier_frais_id" class="form-label">Type de Frais *</label>
+                            <select class="form-control" id="modifier_frais_id" name="frais_id" required>
+                                <option value="">Sélectionner le type de frais</option>
+                                <?php foreach ($frais_list as $f): ?>
+                                    <option value="<?php echo $f['id']; ?>">
+                                        <?php echo $f['type_frais'] . ' - ' . number_format($f['montant'], 2, ',', ' ') . ' Kwz'; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_montant_paye" class="form-label">Montant payé *</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="modifier_montant_paye" name="montant_paye" step="0.01" required>
+                                <span class="input-group-text">Kwz</span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_mode_paiement" class="form-label">Mode de paiement *</label>
+                            <select class="form-control" id="modifier_mode_paiement" name="mode_paiement" required>
+                                <option value="espèces">Espèces</option>
+                                <option value="chèque">Chèque</option>
+                                <option value="virement">Virement</option>
+                                <option value="carte">Carte bancaire</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="modifier_date_paiement" class="form-label">Date de paiement *</label>
+                            <input type="date" class="form-control" id="modifier_date_paiement" name="date_paiement" required>
+                        </div>
+                        <div class="col-12">
+                            <label for="modifier_reference" class="form-label">Référence</label>
+                            <input type="text" class="form-control" id="modifier_reference" name="reference" placeholder="Numéro de chèque, référence virement, etc.">
+                        </div>
+                        <div class="col-12">
+                            <label for="modifier_statut" class="form-label">Statut *</label>
+                            <select class="form-control" id="modifier_statut" name="statut" required>
+                                <option value="payé">Payé</option>
+                                <option value="en attente">En attente</option>
+                                <option value="annulé">Annulé</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" name="modifier_paiement" class="btn btn-warning">
+                        <i class="bi bi-save"></i> Modifier
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+    <?php include 'layout-end.php'; ?>
+    <!-- <script src="assets/bootstrap-5.1.3-dist/js/bootstrap.bundle.min.js"></script> -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         const niveauSelect = document.getElementById('niveau_id');
@@ -1350,9 +1638,18 @@ $stats_supp = $stmt_stats_supp->fetch(PDO::FETCH_ASSOC);
         }
     });
 
+    function chargerDonneesPaiement(paiement) {
+        document.getElementById('modifier_paiement_id').value = paiement.id;
+        document.getElementById('modifier_frais_id').value = paiement.frais_id;
+        document.getElementById('modifier_montant_paye').value = paiement.montant_paye;
+        document.getElementById('modifier_mode_paiement').value = paiement.mode_paiement;
+        document.getElementById('modifier_date_paiement').value = paiement.date_paiement.split(' ')[0]; // Garder seulement la date
+        document.getElementById('modifier_reference').value = paiement.reference || '';
+        document.getElementById('modifier_statut').value = paiement.statut;
+    }
     function genererRecu(paiementId) {
         // Ouvrir dans une nouvelle fenêtre pour impression
-        var url = 'generer_recu.php?id=' + paiementId + '&auto_print=1';
+        var url = 'generer_recu.php?id=' + paiementId + '&type=paiement&auto_print=1';
         var windowFeatures = 'width=800,height=900,scrollbars=yes,resizable=yes';
         window.open(url, '_blank', windowFeatures);
     }

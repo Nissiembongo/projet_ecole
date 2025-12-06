@@ -7,6 +7,7 @@
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="assets/bootstrap-5.1.3-dist/css/bootstrap.min.css" rel="stylesheet">
     
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
@@ -21,6 +22,61 @@
     <meta name="csrf-token" content="<?php echo CSRF::generateToken(); ?>">
     
     <style>
+        /* Styles pour les sous-menus */
+        .sidebar .nav-link {
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            transition: all 0.2s;
+        }
+
+        .sidebar .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar .nav-link.active {
+            background-color: #0d6efd;
+            color: white !important;
+        }
+
+        .sidebar .nav-link[aria-expanded="true"] {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar .nav-link[aria-expanded="true"] .bi-chevron-down {
+            transform: rotate(180deg);
+            transition: transform 0.3s;
+        }
+
+        .sidebar .nav-link .bi-chevron-down {
+            transition: transform 0.3s;
+        }
+
+        /* Styles spécifiques pour les sous-menus */
+        .sidebar .nav.flex-column.ms-3 {
+            padding-left: 1rem;
+            margin-top: 0.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar .nav.flex-column.ms-3 .nav-link {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+        }
+
+        .sidebar .nav.flex-column.ms-3 .nav-link.active {
+            background-color: #0d6efd;
+            color: white !important;
+            border-radius: 0.25rem;
+        }
+
+        /* Ajout d'une icône différente pour le menu configuration */
+        .sidebar .bi-gear {
+            color: #6c757d;
+        }
+
+        .sidebar .nav-link[aria-expanded="true"] .bi-gear {
+            color: #0d6efd;
+        }
         .sidebar {
             min-height: calc(100vh - 56px);
             background: linear-gradient(180deg, #2c3e50 0%, #3498db 100%);
@@ -154,13 +210,13 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'frais.php' ? 'active' : ''; ?>" href="frais.php">
-                                <i class="bi bi-cash-coin"></i> Types de Frais
+                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'paiements.php' ? 'active' : ''; ?>" href="paiements.php">
+                                <i class="bi bi-credit-card"></i> Paiements
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'paiements.php' ? 'active' : ''; ?>" href="paiements.php">
-                                <i class="bi bi-credit-card"></i> Paiements
+                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'vente.php' ? 'active' : ''; ?>" href="vente.php">
+                                <i class="bi bi-cart"></i> Ventes
                             </a>
                         </li>
                         <li class="nav-item">
@@ -168,16 +224,51 @@
                                 <i class="bi bi-safe"></i> Caisse
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'classe.php' ? 'active' : ''; ?>" href="classe.php">
-                                <i class="bi bi-journals"></i> Classes
-                            </a>
-                        </li> 
+                        
+                        
+                        
                         <li class="nav-item">
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'rapport.php' ? 'active' : ''; ?>" href="rapport.php">
                                 <i class="bi bi-graph-up"></i> Rapports
                             </a>
-                        </li> 
+                        </li>
+                        <!-- Menu Configuration avec sous-menus -->
+                        <li class="nav-item">
+                            <a class="nav-link d-flex justify-content-between align-items-center" 
+                            data-bs-toggle="collapse" 
+                            href="#configurationSubmenu" 
+                            role="button" 
+                            aria-expanded="false" 
+                            aria-controls="configurationSubmenu">
+                                <span>
+                                    <i class="bi bi-gear text-white"></i> Configuration
+                                </span>
+                                <i class="bi bi-chevron-down"></i>
+                            </a>
+                            <div class="collapse <?php echo in_array(basename($_SERVER['PHP_SELF']), ['classe.php', 'frais.php', 'articles.php']) ? 'show' : ''; ?>" 
+                                id="configurationSubmenu">
+                                <ul class="nav flex-column ms-3" style="border-left: 2px solid #495057;">
+                                    <li class="nav-item">
+                                        <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'classe.php' ? 'active' : ''; ?>" 
+                                        href="classe.php">
+                                            <i class="bi bi-journals me-2"></i> Classes
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'frais.php' ? 'active' : ''; ?>" 
+                                        href="frais.php">
+                                            <i class="bi bi-cash-coin me-2"></i> Types de Frais
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'articles.php' ? 'active' : ''; ?>" 
+                                        href="articles.php">
+                                            <i class="bi bi-box-seam me-2"></i> Articles
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </li>
                         <?php if (($_SESSION['role'] ?? '') == 'admin'): ?>
                         <li class="nav-item">
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) == 'utilisateur.php' ? 'active' : ''; ?>" href="utilisateur.php">
